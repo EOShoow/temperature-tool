@@ -1,0 +1,38 @@
+{
+  "source": "NASA POWER Hourly API",
+  "endpoint": "https://power.larc.nasa.gov/api/temporal/hourly/point",
+  "parameter": "T2M",
+  "parameter_meaning": "2-meter air temperature, hourly average, degree Celsius",
+  "community": "AG",
+  "time_standard": "LST",
+  "start_year": 2016,
+  "end_year": 2025,
+  "combined_rows": 87672,
+  "wide_rows": 87672,
+  "city_ids": [
+    "kuwait_city"
+  ],
+  "selected_slug": "kuwait_city",
+  "cities": {
+    "kuwait_city": {
+      "city_zh": "科威特市",
+      "city_en": "Kuwait City",
+      "country_zh": "科威特",
+      "country_en": "Kuwait",
+      "latitude": 29.3759,
+      "longitude": 47.9774,
+      "row_count": 87672,
+      "missing_count": 0,
+      "date_start": "2016-01-01",
+      "date_end": "2025-12-31",
+      "hour_column": "hour_lst",
+      "t2m_c_min": 3.35,
+      "t2m_c_max": 48.49,
+      "t2m_c_mean": 26.97
+    }
+  },
+  "outputs": {
+    "combined_csv": "data/processed/nasa_power_t2m_hourly_2016_2025_kuwait_city_lst.csv",
+    "wide_csv": "data/processed/nasa_power_t2m_by_date_hour_2016_2025_kuwait_city_lst.csv"
+  }
+}

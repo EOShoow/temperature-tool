@@ -62,6 +62,15 @@ CITIES = [
         latitude=16.8892,
         longitude=42.5511,
     ),
+    City(
+        city_id="kuwait_city",
+        city_zh="科威特市",
+        city_en="Kuwait City",
+        country_zh="科威特",
+        country_en="Kuwait",
+        latitude=29.3759,
+        longitude=47.9774,
+    ),
 ]
 
 
@@ -167,10 +176,10 @@ def build_wide_rows(long_rows: list[dict], time_standard: str) -> list[dict]:
     return [wide[key] for key in sorted(wide)]
 
 
-def summarize(rows: list[dict], time_standard: str) -> dict:
+def summarize(rows: list[dict], cities: list[City], time_standard: str) -> dict:
     hour_col = f"hour_{time_standard.lower()}"
     summary: dict[str, dict] = {}
-    for city in CITIES:
+    for city in cities:
         city_rows = [row for row in rows if row["city_id"] == city.city_id]
         values = [float(row["t2m_c"]) for row in city_rows if row["t2m_c"] != ""]
         missing = len(city_rows) - len(values)
@@ -202,6 +211,11 @@ def main() -> int:
     parser.add_argument("--out-dir", type=Path, default=Path("data/processed"))
     parser.add_argument("--cache-dir", type=Path, default=Path("data/cache"))
     parser.add_argument("--summary-dir", type=Path, default=Path("data/summary"))
+    parser.add_argument(
+        "--city-ids",
+        default="port_sudan,jizan_saudi",
+        help="逗号分隔 city_id；可选: " + ",".join(city.city_id for city in CITIES),
+    )
     parser.add_argument("--refresh", action="store_true")
     parser.add_argument("--retries", type=int, default=4)
     parser.add_argument("--sleep", type=float, default=2.0)
@@ -210,9 +224,17 @@ def main() -> int:
     if args.start_year > args.end_year:
         parser.error("--start-year 不能晚于 --end-year")
 
+    city_ids = [item.strip() for item in args.city_ids.split(",") if item.strip()]
+    city_by_id = {city.city_id: city for city in CITIES}
+    unknown = [city_id for city_id in city_ids if city_id not in city_by_id]
+    if unknown:
+        parser.error("未知 city_id: " + ",".join(unknown))
+    selected_cities = [city_by_id[city_id] for city_id in city_ids]
+    selected_slug = "_".join(city.city_id for city in selected_cities)
+
     all_rows: list[dict] = []
     years = list(range(args.start_year, args.end_year + 1))
-    for city in CITIES:
+    for city in selected_cities:
         print(f"== {city.city_zh} / {city.city_en} ==")
         city_rows: list[dict] = []
         for year in years:
@@ -231,20 +253,19 @@ def main() -> int:
     fieldnames = list(all_rows[0].keys())
     combined_path = args.out_dir / (
         f"nasa_power_t2m_hourly_{args.start_year}_{args.end_year}_"
-        f"port_sudan_jizan_{args.time_standard.lower()}.csv"
+        f"{selected_slug}_{args.time_standard.lower()}.csv"
     )
     combined_count = write_csv(combined_path, all_rows, fieldnames)
 
     wide_rows = build_wide_rows(all_rows, args.time_standard)
     wide_path = args.out_dir / (
         f"nasa_power_t2m_by_date_hour_{args.start_year}_{args.end_year}_"
-        f"port_sudan_jizan_{args.time_standard.lower()}.csv"
+        f"{selected_slug}_{args.time_standard.lower()}.csv"
     )
     wide_fields = [
         "date",
         f"hour_{args.time_standard.lower()}",
-        "port_sudan_t2m_c",
-        "jizan_saudi_t2m_c",
+        *[f"{city.city_id}_t2m_c" for city in selected_cities],
     ]
     wide_count = write_csv(wide_path, wide_rows, wide_fields)
 
@@ -259,7 +280,9 @@ def main() -> int:
         "end_year": args.end_year,
         "combined_rows": combined_count,
         "wide_rows": wide_count,
-        "cities": summarize(all_rows, args.time_standard),
+        "city_ids": city_ids,
+        "selected_slug": selected_slug,
+        "cities": summarize(all_rows, selected_cities, args.time_standard),
         "outputs": {
             "combined_csv": str(combined_path),
             "wide_csv": str(wide_path),
@@ -267,7 +290,7 @@ def main() -> int:
     }
     args.summary_dir.mkdir(parents=True, exist_ok=True)
     summary_path = args.summary_dir / (
-        f"nasa_power_t2m_export_summary_{args.start_year}_{args.end_year}_{args.time_standard.lower()}.json"
+        f"nasa_power_t2m_export_summary_{args.start_year}_{args.end_year}_{selected_slug}_{args.time_standard.lower()}.json"
     )
     summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"wrote {combined_count}: {combined_path}")
@@ -278,4 +301,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-
