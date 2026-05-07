@@ -1,0 +1,50 @@
+{
+  "source": "NASA POWER Hourly API",
+  "endpoint": "https://power.larc.nasa.gov/api/temporal/hourly/point",
+  "parameter": "T2M",
+  "parameter_meaning": "2-meter air temperature, hourly average, degree Celsius",
+  "community": "AG",
+  "time_standard": "LST",
+  "start_year": 2016,
+  "end_year": 2025,
+  "combined_rows": 175344,
+  "wide_rows": 87672,
+  "cities": {
+    "port_sudan": {
+      "city_zh": "苏丹港",
+      "city_en": "Port Sudan",
+      "country_zh": "苏丹",
+      "country_en": "Sudan",
+      "latitude": 19.6158,
+      "longitude": 37.2164,
+      "row_count": 87672,
+      "missing_count": 0,
+      "date_start": "2016-01-01",
+      "date_end": "2025-12-31",
+      "hour_column": "hour_lst",
+      "t2m_c_min": 19.09,
+      "t2m_c_max": 41.06,
+      "t2m_c_mean": 29.43
+    },
+    "jizan_saudi": {
+      "city_zh": "吉赞",
+      "city_en": "Jizan",
+      "country_zh": "沙特阿拉伯",
+      "country_en": "Saudi Arabia",
+      "latitude": 16.8892,
+      "longitude": 42.5511,
+      "row_count": 87672,
+      "missing_count": 0,
+      "date_start": "2016-01-01",
+      "date_end": "2025-12-31",
+      "hour_column": "hour_lst",
+      "t2m_c_min": 20.3,
+      "t2m_c_max": 42.58,
+      "t2m_c_mean": 30.93
+    }
+  },
+  "outputs": {
+    "combined_csv": "data/processed/nasa_power_t2m_hourly_2016_2025_port_sudan_jizan_lst.csv",
+    "wide_csv": "data/processed/nasa_power_t2m_by_date_hour_2016_2025_port_sudan_jizan_lst.csv"
+  }
+}
