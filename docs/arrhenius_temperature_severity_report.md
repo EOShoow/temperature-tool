@@ -175,6 +175,12 @@ T_eq = 10 * log2(damage_index)
 
 ## 7. 可复现资产
 
+图示源文件：
+
+- `docs/diagrams/arrhenius-temperature-severity.dsl`
+- `docs/diagrams/arrhenius-temperature-severity.excalidraw`
+- `docs/diagrams/arrhenius-temperature-severity-notes.md`
+
 计算脚本：
 
 ```bash
@@ -185,4 +191,3 @@ python3 scripts/analyze_arrhenius_temperature_severity.py
 
 - `data/summary/arrhenius_10c_halving_severity_2016_2025.csv`
 - `data/summary/arrhenius_10c_halving_severity_2016_2025.json`
-
