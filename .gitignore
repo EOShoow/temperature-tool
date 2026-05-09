@@ -10,3 +10,4 @@ data/tmp_candidate_daily_cache.json
 
 # Keep generated final workbooks, but skip Finder metadata.
 outputs/.DS_Store
+outputs/*.zip

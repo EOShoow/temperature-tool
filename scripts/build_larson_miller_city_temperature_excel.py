@@ -60,6 +60,26 @@ def append_csv_sheet(wb: Workbook, title: str, path: Path) -> int:
     return count
 
 
+def threshold_stats(city_id: str, threshold_c: float = 40.0) -> dict:
+    valid_count = 0
+    exceed_count = 0
+    with csv_path_for_city(city_id).open("r", encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle)
+        for row in reader:
+            value = row.get("t2m_c", "")
+            if value == "":
+                continue
+            valid_count += 1
+            if float(value) >= threshold_c:
+                exceed_count += 1
+    ratio = exceed_count / valid_count if valid_count else 0
+    return {
+        "valid_count": valid_count,
+        "exceed_count": exceed_count,
+        "ratio": ratio,
+    }
+
+
 def set_basic_widths(ws, widths: dict[str, int]) -> None:
     for column, width in widths.items():
         ws.column_dimensions[column].width = width
@@ -79,10 +99,23 @@ def build_summary_sheet(wb: Workbook, summary: dict) -> None:
         ["宽表行数", summary["wide_rows"]],
         ["说明", "T2M 为 2 米气温小时平均值，单位摄氏度；宽表按 date + hour_lst 对齐全部城市。"],
         [],
-        ["city_id", "城市", "国家", "纬度", "经度", "小时数", "缺失值", "温度范围", "平均温度"],
+        [
+            "city_id",
+            "城市",
+            "国家",
+            "纬度",
+            "经度",
+            "小时数",
+            "缺失值",
+            "温度范围",
+            "平均温度",
+            ">=40°C 小时数",
+            ">=40°C 占比",
+        ],
     ]
     for city_id in CITY_IDS:
         city = summary["cities"][city_id]
+        h40 = threshold_stats(city_id, 40.0)
         rows.append(
             [
                 city_id,
@@ -94,6 +127,8 @@ def build_summary_sheet(wb: Workbook, summary: dict) -> None:
                 city["missing_count"],
                 f'{city["t2m_c_min"]} 至 {city["t2m_c_max"]} °C',
                 f'{city["t2m_c_mean"]} °C',
+                h40["exceed_count"],
+                f'{h40["ratio"]:.2%}',
             ]
         )
 
@@ -119,6 +154,8 @@ def build_summary_sheet(wb: Workbook, summary: dict) -> None:
             "G": 10,
             "H": 20,
             "I": 16,
+            "J": 16,
+            "K": 16,
         },
     )
 
@@ -158,4 +195,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
