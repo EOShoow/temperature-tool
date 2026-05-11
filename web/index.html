@@ -11,7 +11,7 @@
       <header class="topbar">
         <div>
           <h1>NASA POWER 小时气温拉取工具</h1>
-          <p>输入经纬度，浏览器直接拉取 NASA POWER Hourly T2M，计算超温占比并导出 CSV。</p>
+          <p>输入经纬度，浏览器直接拉取 NASA POWER Hourly T2M，计算超温占比并导出 Excel。</p>
         </div>
         <div class="status-pill" id="cacheStatus">缓存：检查中</div>
       </header>
@@ -82,11 +82,7 @@
             <p id="runSummary">尚未运行。</p>
           </div>
           <div class="button-row" id="downloadButtons">
-            <button type="button" data-download="summary" disabled>下载 summary.csv</button>
-            <button type="button" data-download="long" disabled>下载 long.csv</button>
-            <button type="button" data-download="wide" disabled>下载 wide.csv</button>
-            <button type="button" data-download="errors" disabled>下载 errors.csv</button>
-            <button type="button" data-download="manifest" disabled>下载 manifest.json</button>
+            <button type="button" data-download="excel" disabled>下载 Excel 工作簿</button>
           </div>
         </div>
         <progress id="progressBar" value="0" max="1"></progress>
@@ -137,6 +133,7 @@
       </section>
     </main>
 
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
     <script src="./app.js"></script>
   </body>
 </html>

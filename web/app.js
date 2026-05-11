@@ -1,6 +1,6 @@
 "use strict";
 
-const TOOL_VERSION = "0.1.0";
+const TOOL_VERSION = "0.2.0";
 const NASA_ENDPOINT = "https://power.larc.nasa.gov/api/temporal/hourly/point";
 const PARAMETER = "T2M";
 const COMMUNITY = "AG";
@@ -51,18 +51,6 @@ function csvEscape(value) {
     return `"${text.replace(/"/g, '""')}"`;
   }
   return text;
-}
-
-function toCsv(rows, columns, metadataLines = []) {
-  const lines = [];
-  for (const line of metadataLines) {
-    lines.push(`# ${line}`);
-  }
-  lines.push(columns.join(","));
-  for (const row of rows) {
-    lines.push(columns.map((column) => csvEscape(row[column])).join(","));
-  }
-  return `\ufeff${lines.join("\n")}\n`;
 }
 
 function rowsToCsv(rows) {
@@ -379,20 +367,6 @@ function setBusy(isBusy) {
   elements.fileInput.disabled = isBusy;
 }
 
-function metadataLines(params) {
-  return [
-    "source=NASA POWER Hourly API",
-    `endpoint=${NASA_ENDPOINT}`,
-    `parameter=${PARAMETER}`,
-    "parameter_meaning=2-meter air temperature, hourly average, degree Celsius",
-    `time_standard=${params.timeStandard}`,
-    `start_year=${params.startYear}`,
-    `end_year=${params.endYear}`,
-    `threshold_c=${params.threshold}`,
-    `tool_version=${TOOL_VERSION}`,
-  ];
-}
-
 function renderSummaryTable(rows) {
   elements.summaryTableBody.innerHTML = "";
   for (const row of rows) {
@@ -422,8 +396,7 @@ function renderSummaryTable(rows) {
 function setDownloadsEnabled(result) {
   activeResult = result;
   elements.downloadButtons.querySelectorAll("button").forEach((button) => {
-    const type = button.dataset.download;
-    button.disabled = !result || (type === "errors" && result.errors.length === 0);
+    button.disabled = !result;
   });
 }
 
@@ -444,39 +417,174 @@ function resultFilename(name, extension) {
   return `nasa_power_t2m_${name}_${stamp}.${extension}`;
 }
 
+function safeSheetName(name, usedNames) {
+  const cleaned = String(name || "sheet")
+    .replace(/[:\\/?*\[\]]/g, "_")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 31) || "sheet";
+  let candidate = cleaned;
+  let index = 2;
+  while (usedNames.has(candidate)) {
+    const suffix = `_${index}`;
+    candidate = `${cleaned.slice(0, 31 - suffix.length)}${suffix}`;
+    index += 1;
+  }
+  usedNames.add(candidate);
+  return candidate;
+}
+
+function rowsToAoa(rows, columns) {
+  return [
+    columns,
+    ...rows.map((row) => columns.map((column) => row[column] ?? "")),
+  ];
+}
+
+function summarySheetAoa(result) {
+  const manifest = result.manifest;
+  return [
+    ["项目", "内容"],
+    ["数据源", manifest.source],
+    ["接口", manifest.endpoint],
+    ["参数", `${manifest.parameter} (${manifest.parameter_meaning})`],
+    ["时间标准", manifest.params.timeStandard],
+    ["年份范围", `${manifest.params.startYear}-${manifest.params.endYear}`],
+    ["超温阈值", `${manifest.params.threshold} °C`],
+    ["点位数量", manifest.site_count],
+    ["合并长表行数", result.longRows.length],
+    ["宽表行数", result.wideRows.length],
+    ["缓存命中", manifest.cache_hits],
+    ["缓存未命中", manifest.cache_misses],
+    ["失败请求", manifest.error_count],
+    ["工具版本", manifest.tool_version],
+    ["生成时间", manifest.generated_at],
+    ["说明", "T2M 为 2 米气温小时平均值，单位摄氏度；宽表按 date + hour 对齐全部点位。"],
+    [],
+    [
+      "site_id",
+      "名称",
+      "国家",
+      "纬度",
+      "经度",
+      "小时数",
+      "有效小时",
+      "缺失值",
+      "温度范围",
+      "平均温度",
+      "超温阈值",
+      "超温小时数",
+      "超温占比",
+      "缓存命中",
+      "缓存未命中",
+      "失败年份",
+    ],
+    ...result.summaryRows.map((row) => [
+      row.site_id,
+      row.name,
+      row.country,
+      row.latitude,
+      row.longitude,
+      row.row_count,
+      row.valid_count,
+      row.missing_count,
+      row.t2m_c_min || row.t2m_c_max ? `${row.t2m_c_min} 至 ${row.t2m_c_max} °C` : "",
+      row.t2m_c_mean ? `${row.t2m_c_mean} °C` : "",
+      `${row.threshold_c} °C`,
+      row.exceed_count,
+      row.exceed_ratio_percent,
+      row.cache_hits,
+      row.cache_misses,
+      row.failed_years,
+    ]),
+  ];
+}
+
+function manifestRows(manifest) {
+  const rows = [
+    { key: "tool_version", value: manifest.tool_version },
+    { key: "generated_at", value: manifest.generated_at },
+    { key: "source", value: manifest.source },
+    { key: "endpoint", value: manifest.endpoint },
+    { key: "parameter", value: manifest.parameter },
+    { key: "parameter_meaning", value: manifest.parameter_meaning },
+    { key: "community", value: manifest.community },
+    { key: "start_year", value: manifest.params.startYear },
+    { key: "end_year", value: manifest.params.endYear },
+    { key: "time_standard", value: manifest.params.timeStandard },
+    { key: "threshold_c", value: manifest.params.threshold },
+    { key: "refresh_cache", value: manifest.params.refreshCache },
+    { key: "site_count", value: manifest.site_count },
+    { key: "total_requests", value: manifest.total_requests },
+    { key: "cache_hits", value: manifest.cache_hits },
+    { key: "cache_misses", value: manifest.cache_misses },
+    { key: "error_count", value: manifest.error_count },
+    { key: "sheets", value: "摘要, 宽表_全部点位对齐, 每个点位长表, 运行记录, 错误记录(如有)" },
+  ];
+  for (const site of manifest.sites) {
+    rows.push({
+      key: `site.${site.site_id}`,
+      value: `${site.name}, ${site.country || ""}, ${site.latitude}, ${site.longitude}`,
+    });
+  }
+  return rows;
+}
+
+function autosizeSheet(sheet, rows, columns) {
+  sheet["!cols"] = columns.map((column) => {
+    const max = Math.max(
+      String(column).length,
+      ...rows.slice(0, 250).map((row) => String(row[column] ?? "").length),
+    );
+    return { wch: Math.min(Math.max(max + 2, 10), 42) };
+  });
+}
+
+function appendJsonSheet(workbook, name, rows, columns, usedNames) {
+  const sheet = XLSX.utils.json_to_sheet(rows, { header: columns });
+  autosizeSheet(sheet, rows, columns);
+  XLSX.utils.book_append_sheet(workbook, sheet, safeSheetName(name, usedNames));
+}
+
+function appendAoaSheet(workbook, name, aoa, usedNames) {
+  const sheet = XLSX.utils.aoa_to_sheet(aoa);
+  sheet["!cols"] = aoa[0].map((_, columnIndex) => {
+    const max = Math.max(...aoa.slice(0, 250).map((row) => String(row[columnIndex] ?? "").length));
+    return { wch: Math.min(Math.max(max + 2, 10), 42) };
+  });
+  XLSX.utils.book_append_sheet(workbook, sheet, safeSheetName(name, usedNames));
+}
+
+function downloadExcelWorkbook() {
+  if (!activeResult) return;
+  if (!window.XLSX) {
+    setWarning("Excel 导出组件未加载。请确认网络可访问 cdn.sheetjs.com，或改用本地静态服务后刷新页面。", true);
+    return;
+  }
+  const workbook = XLSX.utils.book_new();
+  const usedNames = new Set();
+
+  appendAoaSheet(workbook, "摘要", summarySheetAoa(activeResult), usedNames);
+  appendJsonSheet(workbook, "宽表_全部点位对齐", activeResult.wideRows, activeResult.wideColumns, usedNames);
+
+  for (const site of activeResult.manifest.sites) {
+    const rows = activeResult.longRows.filter((row) => row.site_id === site.site_id);
+    appendJsonSheet(workbook, `${site.name || site.site_id}_长表`, rows, activeResult.longColumns, usedNames);
+  }
+
+  appendJsonSheet(workbook, "运行记录", manifestRows(activeResult.manifest), ["key", "value"], usedNames);
+
+  if (activeResult.errors.length) {
+    appendJsonSheet(workbook, "错误记录", activeResult.errors, activeResult.errorColumns, usedNames);
+  }
+
+  XLSX.writeFile(workbook, resultFilename("workbook", "xlsx"), { compression: true });
+}
+
 function downloadResult(type) {
   if (!activeResult) return;
-  const meta = metadataLines(activeResult.params);
-  if (type === "summary") {
-    downloadText(
-      resultFilename("summary", "csv"),
-      toCsv(activeResult.summaryRows, activeResult.summaryColumns, meta),
-      "text/csv;charset=utf-8",
-    );
-  } else if (type === "long") {
-    downloadText(
-      resultFilename("long", "csv"),
-      toCsv(activeResult.longRows, activeResult.longColumns, meta),
-      "text/csv;charset=utf-8",
-    );
-  } else if (type === "wide") {
-    downloadText(
-      resultFilename("wide", "csv"),
-      toCsv(activeResult.wideRows, activeResult.wideColumns, meta),
-      "text/csv;charset=utf-8",
-    );
-  } else if (type === "errors") {
-    downloadText(
-      resultFilename("errors", "csv"),
-      toCsv(activeResult.errors, activeResult.errorColumns, meta),
-      "text/csv;charset=utf-8",
-    );
-  } else if (type === "manifest") {
-    downloadText(
-      resultFilename("manifest", "json"),
-      JSON.stringify(activeResult.manifest, null, 2),
-      "application/json;charset=utf-8",
-    );
+  if (type === "excel") {
+    downloadExcelWorkbook();
   }
 }
 
@@ -658,10 +766,7 @@ async function runExport() {
       error_count: errors.length,
       requests,
       outputs: {
-        summary_csv: "download button: summary.csv",
-        long_csv: "download button: long.csv",
-        wide_csv: "download button: wide.csv",
-        errors_csv: errors.length ? "download button: errors.csv" : null,
+        workbook_xlsx: "download button: Excel workbook",
       },
     };
 
@@ -683,7 +788,7 @@ async function runExport() {
     elements.runSummary.textContent = completeText;
     setProgress(total, total, completeText);
     if (errors.length) {
-      setWarning(`有 ${errors.length} 个请求失败，可下载 errors.csv 查看。`, true);
+      setWarning(`有 ${errors.length} 个请求失败，下载 Excel 后可在“错误记录”sheet 查看。`, true);
     }
   } catch (error) {
     setWarning(error.message || String(error), true);
