@@ -1,31 +1,141 @@
 "use strict";
 
-const TOOL_VERSION = "0.2.0";
+const TOOL_VERSION = "0.3.0";
 const NASA_ENDPOINT = "https://power.larc.nasa.gov/api/temporal/hourly/point";
+const NOMINATIM_ENDPOINT = "https://nominatim.openstreetmap.org/search";
 const PARAMETER = "T2M";
 const COMMUNITY = "AG";
+const GEOCODE_MIN_INTERVAL_MS = 1000;
 const DEFAULT_SAMPLE = [
   "site_id,name,latitude,longitude,country",
   "kuwait_city,科威特市,29.3759,47.9774,科威特",
   "jizan_saudi,吉赞,16.8892,42.5511,沙特阿拉伯",
 ].join("\n");
 
-const HOT_CITIES = [
-  ["ahvaz", "阿瓦士", 31.3183, 48.6706, "伊朗"],
-  ["basra", "巴士拉", 30.5085, 47.7804, "伊拉克"],
-  ["jacobabad", "雅各布阿巴德", 28.281, 68.4388, "巴基斯坦"],
-  ["riyadh", "利雅得", 24.7136, 46.6753, "沙特阿拉伯"],
-  ["mecca", "麦加", 21.3891, 39.8579, "沙特阿拉伯"],
-  ["kuwait_city", "科威特市", 29.3759, 47.9774, "科威特"],
-  ["jizan_saudi", "吉赞", 16.8892, 42.5511, "沙特阿拉伯"],
-  ["port_sudan", "苏丹港", 19.6158, 37.2164, "苏丹"],
+const CITY_GAZETTEER = [
+  {
+    site_id: "dubai",
+    name_zh: "迪拜",
+    name_en: "Dubai",
+    aliases: ["迪拜市", "دبي", "Dubai, UAE"],
+    country_zh: "阿联酋",
+    country_code: "ae",
+    latitude: 25.2048,
+    longitude: 55.2708,
+    source: "built-in",
+  },
+  {
+    site_id: "ahvaz",
+    name_zh: "阿瓦士",
+    name_en: "Ahvaz",
+    aliases: ["اهواز"],
+    country_zh: "伊朗",
+    country_code: "ir",
+    latitude: 31.3183,
+    longitude: 48.6706,
+    source: "built-in",
+    hot_city: true,
+  },
+  {
+    site_id: "basra",
+    name_zh: "巴士拉",
+    name_en: "Basra",
+    aliases: ["البصرة"],
+    country_zh: "伊拉克",
+    country_code: "iq",
+    latitude: 30.5085,
+    longitude: 47.7804,
+    source: "built-in",
+    hot_city: true,
+  },
+  {
+    site_id: "jacobabad",
+    name_zh: "雅各布阿巴德",
+    name_en: "Jacobabad",
+    aliases: [],
+    country_zh: "巴基斯坦",
+    country_code: "pk",
+    latitude: 28.281,
+    longitude: 68.4388,
+    source: "built-in",
+    hot_city: true,
+  },
+  {
+    site_id: "riyadh",
+    name_zh: "利雅得",
+    name_en: "Riyadh",
+    aliases: ["الرياض"],
+    country_zh: "沙特阿拉伯",
+    country_code: "sa",
+    latitude: 24.7136,
+    longitude: 46.6753,
+    source: "built-in",
+    hot_city: true,
+  },
+  {
+    site_id: "mecca",
+    name_zh: "麦加",
+    name_en: "Mecca",
+    aliases: ["Makkah", "مكة"],
+    country_zh: "沙特阿拉伯",
+    country_code: "sa",
+    latitude: 21.3891,
+    longitude: 39.8579,
+    source: "built-in",
+    hot_city: true,
+  },
+  {
+    site_id: "kuwait_city",
+    name_zh: "科威特市",
+    name_en: "Kuwait City",
+    aliases: ["مدينة الكويت"],
+    country_zh: "科威特",
+    country_code: "kw",
+    latitude: 29.3759,
+    longitude: 47.9774,
+    source: "built-in",
+    hot_city: true,
+  },
+  {
+    site_id: "jizan_saudi",
+    name_zh: "吉赞",
+    name_en: "Jizan",
+    aliases: ["Jazan", "جازان"],
+    country_zh: "沙特阿拉伯",
+    country_code: "sa",
+    latitude: 16.8892,
+    longitude: 42.5511,
+    source: "built-in",
+    hot_city: true,
+  },
+  {
+    site_id: "port_sudan",
+    name_zh: "苏丹港",
+    name_en: "Port Sudan",
+    aliases: ["بورسودان"],
+    country_zh: "苏丹",
+    country_code: "sd",
+    latitude: 19.6158,
+    longitude: 37.2164,
+    source: "built-in",
+    hot_city: true,
+  },
 ];
+
+const HOT_CITIES = CITY_GAZETTEER
+  .filter((city) => city.hot_city)
+  .map((city) => [city.site_id, city.name_zh, city.latitude, city.longitude, city.country_zh]);
 
 const elements = {
   csvInput: document.getElementById("csvInput"),
   fileInput: document.getElementById("fileInput"),
   loadHotCities: document.getElementById("loadHotCities"),
   downloadTemplate: document.getElementById("downloadTemplate"),
+  geocodeQuery: document.getElementById("geocodeQuery"),
+  geocodeCountry: document.getElementById("geocodeCountry"),
+  geocodeButton: document.getElementById("geocodeButton"),
+  geocodeStatus: document.getElementById("geocodeStatus"),
+  geocodeResults: document.getElementById("geocodeResults"),
   startYear: document.getElementById("startYear"),
   endYear: document.getElementById("endYear"),
   timeStandard: document.getElementById("timeStandard"),
@@ -43,6 +153,7 @@ const elements = {
 };
 
 let activeResult = null;
+let lastGeocodeRequestAt = 0;
 
 function csvEscape(value) {
   if (value === null || value === undefined) return "";
@@ -115,6 +226,51 @@ function normalizeSiteId(value, fallback) {
     .toLowerCase() || fallback;
 }
 
+function normalizeSearchText(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+function isMostlyAscii(value) {
+  return /^[\x00-\x7F\s,.'-]+$/.test(value);
+}
+
+function builtInSearch(query, countryHint) {
+  const normalizedQuery = normalizeSearchText(query);
+  const normalizedCountry = normalizeSearchText(countryHint);
+  if (!normalizedQuery) return [];
+  return CITY_GAZETTEER.filter((city) => {
+    const names = [city.name_zh, ...city.aliases];
+    if (!isMostlyAscii(query)) {
+      names.push(city.name_en);
+    } else {
+      // For English city names, prefer external geocoding candidates unless the
+      // user gives a qualified alias like "Dubai, UAE".
+      names.push(...city.aliases.filter((alias) => alias.includes(",")));
+    }
+    const nameMatch = names.some((name) => normalizeSearchText(name) === normalizedQuery);
+    if (!nameMatch) return false;
+    if (!normalizedCountry) return true;
+    return [city.country_zh, city.country_code].some((value) =>
+      normalizeSearchText(value).includes(normalizedCountry),
+    );
+  }).map((city) => ({
+    source: "built-in",
+    display_name: `${city.name_zh} / ${city.name_en}, ${city.country_zh}`,
+    name: city.name_zh,
+    country: city.country_zh,
+    country_code: city.country_code,
+    latitude: city.latitude,
+    longitude: city.longitude,
+    category: "place",
+    type: "city",
+    site_id: city.site_id,
+    confidence_label: "内置城市",
+  }));
+}
+
 function parseSites(text) {
   const rows = parseCsv(text);
   if (rows.length < 2) {
@@ -168,13 +324,51 @@ function parseSites(text) {
   });
 }
 
+function currentSiteIds() {
+  try {
+    return new Set(parseSites(elements.csvInput.value).map((site) => site.site_id));
+  } catch (_error) {
+    const rows = parseCsv(elements.csvInput.value || "");
+    if (rows.length < 2) return new Set();
+    const headers = rows[0].map(normalizeHeader);
+    const siteIdIndex = headers.indexOf("site_id");
+    if (siteIdIndex < 0) return new Set();
+    return new Set(rows.slice(1).map((row) => normalizeSiteId(row[siteIdIndex], "")).filter(Boolean));
+  }
+}
+
+function appendCandidateToCsv(candidate) {
+  const siteId = normalizeSiteId(candidate.site_id || candidate.name, "geocode_site");
+  if (currentSiteIds().has(siteId)) {
+    setGeocodeStatus(`site_id 已存在：${siteId}。请先在 CSV 中改名或删除重复行。`, true);
+    return;
+  }
+
+  const hasText = elements.csvInput.value.trim().length > 0;
+  const prefix = hasText ? elements.csvInput.value.replace(/\s+$/g, "") : "site_id,name,latitude,longitude,country";
+  const line = rowsToCsv([
+    [
+      siteId,
+      candidate.name || siteId,
+      Number(candidate.latitude).toFixed(4),
+      Number(candidate.longitude).toFixed(4),
+      candidate.country || "",
+    ],
+  ]);
+  elements.csvInput.value = `${prefix}\n${line}`;
+  setGeocodeStatus(`已加入：${siteId}, ${candidate.name}, ${Number(candidate.latitude).toFixed(4)}, ${Number(candidate.longitude).toFixed(4)}`);
+}
+
 function openDatabase() {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open("nasa-power-temperature-tool", 1);
+    const request = indexedDB.open("nasa-power-temperature-tool", 2);
     request.onupgradeneeded = () => {
       const db = request.result;
       if (!db.objectStoreNames.contains("responses")) {
         db.createObjectStore("responses", { keyPath: "key" });
+      }
+      if (!db.objectStoreNames.contains("geocodes")) {
+        db.createObjectStore("geocodes", { keyPath: "key" });
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -182,28 +376,30 @@ function openDatabase() {
   });
 }
 
-function dbGet(db, key) {
+function dbGet(db, storeName, key) {
   return new Promise((resolve, reject) => {
-    const tx = db.transaction("responses", "readonly");
-    const request = tx.objectStore("responses").get(key);
+    const tx = db.transaction(storeName, "readonly");
+    const request = tx.objectStore(storeName).get(key);
     request.onsuccess = () => resolve(request.result || null);
     request.onerror = () => reject(request.error);
   });
 }
 
-function dbPut(db, value) {
+function dbPut(db, storeName, value) {
   return new Promise((resolve, reject) => {
-    const tx = db.transaction("responses", "readwrite");
-    tx.objectStore("responses").put(value);
+    const tx = db.transaction(storeName, "readwrite");
+    tx.objectStore(storeName).put(value);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
 }
 
-function dbClear(db) {
+function dbClearStores(db, storeNames) {
   return new Promise((resolve, reject) => {
-    const tx = db.transaction("responses", "readwrite");
-    tx.objectStore("responses").clear();
+    const tx = db.transaction(storeNames, "readwrite");
+    for (const storeName of storeNames) {
+      tx.objectStore(storeName).clear();
+    }
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
@@ -233,6 +429,182 @@ function buildNasaUrl(site, year, timeStandard) {
     header: "true",
   });
   return `${NASA_ENDPOINT}?${params.toString()}`;
+}
+
+function geocodeCacheKey(query, countryHint) {
+  return [normalizeSearchText(query), normalizeSearchText(countryHint)].join("|");
+}
+
+function buildNominatimUrl(query, countryHint) {
+  const searchText = [query.trim(), countryHint.trim()].filter(Boolean).join(", ");
+  const params = new URLSearchParams({
+    format: "jsonv2",
+    q: searchText,
+    limit: "5",
+    "accept-language": "zh-CN,en",
+    addressdetails: "1",
+  });
+  return `${NOMINATIM_ENDPOINT}?${params.toString()}`;
+}
+
+async function waitForGeocodeRateLimit() {
+  const now = Date.now();
+  const remaining = GEOCODE_MIN_INTERVAL_MS - (now - lastGeocodeRequestAt);
+  if (remaining > 0) {
+    await new Promise((resolve) => setTimeout(resolve, remaining));
+  }
+  lastGeocodeRequestAt = Date.now();
+}
+
+function rankGeocodeCandidate(candidate) {
+  const placeTypes = ["city", "town", "municipality", "village"];
+  const categoryScore = candidate.category === "place" ? 0 : 10;
+  const typeScore = placeTypes.includes(candidate.type) ? 0 : candidate.type === "administrative" ? 7 : 3;
+  const sourceScore = candidate.source === "built-in" ? -5 : 0;
+  return sourceScore + categoryScore + typeScore - Number(candidate.importance || 0);
+}
+
+function normalizeNominatimResult(result) {
+  const address = result.address || {};
+  const name = result.name || address.city || address.town || address.state || result.display_name || "";
+  const country = address.country || "";
+  const candidate = {
+    source: "nominatim",
+    display_name: result.display_name || name,
+    name,
+    country,
+    country_code: address.country_code || "",
+    latitude: Number(result.lat),
+    longitude: Number(result.lon),
+    category: result.category || "",
+    type: result.type || result.addresstype || "",
+    addresstype: result.addresstype || "",
+    importance: Number(result.importance || 0),
+    confidence_label: "地理编码候选",
+  };
+  if (candidate.category === "place" && ["city", "town", "municipality"].includes(candidate.type)) {
+    candidate.confidence_label = "城市候选";
+  } else if (candidate.category === "boundary") {
+    candidate.confidence_label = "行政边界候选";
+  }
+  const readableId = normalizeSiteId(candidate.name || candidate.display_name, "");
+  const stableFallback = `${candidate.type || "place"}_${result.place_id || result.osm_id || "site"}`;
+  candidate.site_id = readableId && readableId.length > 2 ? readableId : stableFallback;
+  return candidate;
+}
+
+function setGeocodeStatus(message, error = false) {
+  elements.geocodeStatus.textContent = message;
+  elements.geocodeStatus.classList.toggle("error", error);
+}
+
+function candidateMeta(candidate) {
+  const pieces = [
+    candidate.source === "built-in" ? "内置城市表" : "OpenStreetMap Nominatim",
+    candidate.confidence_label,
+    candidate.country,
+    `${Number(candidate.latitude).toFixed(4)}, ${Number(candidate.longitude).toFixed(4)}`,
+  ];
+  return pieces.filter(Boolean).join(" · ");
+}
+
+function renderGeocodeCandidates(candidates) {
+  elements.geocodeResults.innerHTML = "";
+  if (!candidates.length) {
+    const empty = document.createElement("div");
+    empty.className = "candidate-empty";
+    empty.textContent = "未找到候选。可以补充国家/地区提示后再查，或直接手工填写经纬度。";
+    elements.geocodeResults.appendChild(empty);
+    return;
+  }
+
+  for (const candidate of candidates) {
+    const item = document.createElement("div");
+    item.className = "candidate-item";
+
+    const body = document.createElement("div");
+    const title = document.createElement("div");
+    title.className = "candidate-title";
+    title.textContent = candidate.display_name || candidate.name;
+
+    const meta = document.createElement("div");
+    meta.className = "candidate-meta";
+    meta.textContent = candidateMeta(candidate);
+
+    body.append(title, meta);
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "加入列表";
+    button.addEventListener("click", () => appendCandidateToCsv(candidate));
+
+    item.append(body, button);
+    elements.geocodeResults.appendChild(item);
+  }
+}
+
+async function runGeocodeSearch() {
+  const query = elements.geocodeQuery.value.trim();
+  const countryHint = elements.geocodeCountry.value.trim();
+  if (!query) {
+    setGeocodeStatus("请输入城市名。", true);
+    elements.geocodeResults.innerHTML = "";
+    return;
+  }
+
+  elements.geocodeButton.disabled = true;
+  elements.geocodeResults.innerHTML = "";
+  setGeocodeStatus("正在查询地名...");
+  try {
+    const builtIn = builtInSearch(query, countryHint);
+    if (builtIn.length) {
+      renderGeocodeCandidates(builtIn);
+      setGeocodeStatus(`找到 ${builtIn.length} 个内置候选。`);
+      return;
+    }
+
+    const db = await openDatabase();
+    const { results, cacheHit } = await queryNominatim(db, query, countryHint);
+    renderGeocodeCandidates(results);
+    const suffix = cacheHit ? "来自本地地名缓存。" : "来自 OpenStreetMap Nominatim。";
+    setGeocodeStatus(`找到 ${results.length} 个候选，${suffix}`);
+  } catch (error) {
+    setGeocodeStatus(`地名查询失败：${error.message || error}。仍可手工填写经纬度。`, true);
+  } finally {
+    elements.geocodeButton.disabled = false;
+  }
+}
+
+async function queryNominatim(db, query, countryHint) {
+  const key = geocodeCacheKey(query, countryHint);
+  const cached = await dbGet(db, "geocodes", key);
+  if (cached?.results) {
+    return { results: cached.results, cacheHit: true };
+  }
+
+  await waitForGeocodeRateLimit();
+  const url = buildNominatimUrl(query, countryHint);
+  const response = await fetch(url, {
+    headers: { Accept: "application/json" },
+  });
+  if (!response.ok) {
+    throw new Error(`Nominatim 请求失败：HTTP ${response.status}`);
+  }
+  const payload = await response.json();
+  const results = payload
+    .map(normalizeNominatimResult)
+    .filter((candidate) => Number.isFinite(candidate.latitude) && Number.isFinite(candidate.longitude))
+    .sort((a, b) => rankGeocodeCandidate(a) - rankGeocodeCandidate(b));
+  await dbPut(db, "geocodes", {
+    key,
+    query,
+    countryHint,
+    url,
+    results,
+    saved_at: new Date().toISOString(),
+    source: "nominatim",
+  });
+  return { results, cacheHit: false };
 }
 
 async function fetchWithRetry(url, retries = 3) {
@@ -365,6 +737,7 @@ function setBusy(isBusy) {
   elements.runButton.disabled = isBusy;
   elements.clearCache.disabled = isBusy;
   elements.fileInput.disabled = isBusy;
+  elements.geocodeButton.disabled = isBusy;
 }
 
 function renderSummaryTable(rows) {
@@ -660,7 +1033,7 @@ async function runExport() {
         try {
           let payload = null;
           if (!params.refreshCache) {
-            const cached = await dbGet(db, key);
+            const cached = await dbGet(db, "responses", key);
             if (cached?.payload) {
               payload = cached.payload;
               cacheHits += 1;
@@ -669,7 +1042,7 @@ async function runExport() {
           }
           if (!payload) {
             payload = await fetchWithRetry(url, 3);
-            await dbPut(db, {
+            await dbPut(db, "responses", {
               key,
               payload,
               url,
@@ -821,6 +1194,21 @@ elements.fileInput.addEventListener("change", async () => {
   if (!file) return;
   elements.csvInput.value = await file.text();
 });
+elements.geocodeButton.addEventListener("click", () => {
+  runGeocodeSearch();
+});
+elements.geocodeQuery.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    runGeocodeSearch();
+  }
+});
+elements.geocodeCountry.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    runGeocodeSearch();
+  }
+});
 elements.runButton.addEventListener("click", () => {
   runExport();
 });
@@ -828,7 +1216,7 @@ elements.clearCache.addEventListener("click", async () => {
   setBusy(true);
   try {
     const db = await openDatabase();
-    await dbClear(db);
+    await dbClearStores(db, ["responses", "geocodes"]);
     setWarning("浏览器缓存已清空。");
   } catch (error) {
     setWarning(`清空缓存失败：${error.message || error}`, true);

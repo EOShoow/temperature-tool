@@ -18,6 +18,29 @@
 
       <section class="grid">
         <section class="panel input-panel">
+          <div class="geocode-box">
+            <div>
+              <h2>按城市名添加点位</h2>
+              <p>输入城市名后点击查询，先查内置城市表；未命中时查询 OpenStreetMap Nominatim，确认后加入下方 CSV。</p>
+            </div>
+            <div class="geocode-form">
+              <label>
+                城市名
+                <input id="geocodeQuery" type="text" placeholder="例如：迪拜 / Dubai, UAE" autocomplete="off" />
+              </label>
+              <label>
+                国家/地区提示
+                <input id="geocodeCountry" type="text" placeholder="可选，例如：阿联酋 / UAE" autocomplete="off" />
+              </label>
+              <button type="button" id="geocodeButton">查经纬度</button>
+            </div>
+            <div id="geocodeStatus" class="geocode-status">不会自动联想；只有点击查询时才访问公共地理编码服务。</div>
+            <div id="geocodeResults" class="candidate-list" aria-live="polite"></div>
+            <p class="attribution">
+              地名查询 fallback 使用 OpenStreetMap Nominatim。© OpenStreetMap contributors。公共地理编码服务不适合批量自动解析。
+            </p>
+          </div>
+
           <div class="panel-head">
             <div>
               <h2>坐标输入</h2>

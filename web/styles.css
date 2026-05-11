@@ -103,7 +103,10 @@ h3 {
 .readme-panel p,
 .note,
 #inputHint,
-.current-task {
+.current-task,
+.geocode-status,
+.attribution,
+.candidate-meta {
   color: var(--muted);
 }
 
@@ -137,6 +140,64 @@ h3 {
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 12px;
+}
+
+.geocode-box {
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+}
+
+.geocode-form {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(150px, 220px) auto;
+  gap: 10px;
+  align-items: end;
+  margin: 12px 0 8px;
+}
+
+.geocode-status {
+  min-height: 22px;
+}
+
+.geocode-status.error {
+  color: var(--error);
+}
+
+.candidate-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.candidate-item,
+.candidate-empty {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fbfcfb;
+  padding: 10px;
+}
+
+.candidate-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.candidate-title {
+  font-weight: 650;
+}
+
+.candidate-meta {
+  margin-top: 3px;
+  font-size: 13px;
+  white-space: normal;
+}
+
+.attribution {
+  margin-top: 10px;
+  font-size: 13px;
 }
 
 .button-row,
@@ -336,6 +397,11 @@ code {
   }
 
   .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .geocode-form,
+  .candidate-item {
     grid-template-columns: 1fr;
   }
 
