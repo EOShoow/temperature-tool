@@ -1,6 +1,27 @@
-# 苏丹港与沙特吉赞小时级气温导出
+# 地球城市小时级气温导出
 
 本项目用于从 NASA POWER Hourly API 导出城市点位的近 10 年逐日逐小时平均气温。
+
+## 静态网页工具
+
+第一版可迁移工具位于 `web/`，无需 Docker、无需后端、无需安装依赖。
+
+使用方式：
+
+1. 打开 `web/index.html`。
+2. 粘贴或上传坐标 CSV，字段为 `site_id,name,latitude,longitude,country`。
+3. 设置年份、时间标准和超温阈值，默认 `2016-2025 / LST / 40°C`。
+4. 点击“开始拉取”，完成后下载 `summary.csv`、`long.csv`、`wide.csv`、`manifest.json`。
+
+网页会直接请求 NASA POWER API，并使用浏览器 IndexedDB 缓存。缓存只保存在当前浏览器；换电脑、换浏览器或清空站点数据后不会自动迁移。
+
+如果直接双击打开时浏览器限制本地能力，也可以在项目目录临时启动静态服务：
+
+```bash
+python3 -m http.server 8000
+```
+
+然后访问 `http://127.0.0.1:8000/web/`。
 
 ## 数据口径
 
