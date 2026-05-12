@@ -98,3 +98,28 @@ Excel 包含：
 - `宽表_两城市对齐`
 - `苏丹港_长表`
 - `吉赞_长表`
+
+## ERA5-Land 轻量抽样校验
+
+ERA5-Land 校验是 NASA POWER 主线之外的旁路抽检，不修改 `web/`、NASA 导出脚本、NASA 缓存或现有 Excel。它会读取已有 NASA 长表 CSV，每城按固定随机种子抽 `100` 个时间点，再通过 Open-Meteo Historical Weather API 的 `era5_land` 模型查询 ERA5-Land `temperature_2m`。默认按抽样点所在 UTC 年份批量缓存，以减少 API 请求次数；如需严格日级请求，可加 `--fetch-granularity day`。
+
+默认运行：
+
+```bash
+python3 scripts/era5_lightweight_sample_check.py
+```
+
+先跑 3 城小样本：
+
+```bash
+python3 scripts/era5_lightweight_sample_check.py --cities jizan_saudi,kuwait_city,ahvaz
+```
+
+输出：
+
+- `data/summary/era5_lightweight_sample_check_samples.csv`：抽样点明细。
+- `data/summary/era5_lightweight_sample_check_city_summary.csv`：城市级偏差和状态。
+- `data/summary/era5_lightweight_sample_check_summary.json`：机器可读汇总。
+- `docs/era5_lightweight_sample_check_report.md`：中文报告。
+
+判定默认使用：抽样均值偏差 `<= 1°C` 视为通过；高温分层均值偏差和单点绝对偏差 P95 `<= 2°C` 视为通过。超阈值城市进入第三、第四源投票清单，优先引入 `NOAA ISD / Global Hourly` 和 `MERRA-2`。

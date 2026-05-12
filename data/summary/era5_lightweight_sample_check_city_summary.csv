@@ -1,0 +1,4 @@
+﻿city_id,city_zh,city_en,country_zh,country_en,latitude,longitude,sample_count,compared_count,missing_count,nasa_mean_sample_t2m_c,era5_mean_sample_t2m_c,mean_bias_era5_minus_nasa_c,mean_abs_diff_c,p95_abs_point_diff_c,max_abs_point_diff_c,p95_band_mean_bias_c,tail_mean_bias_c,mean_threshold_c,tail_threshold_c,status,reason
+ahvaz,阿瓦士,Ahvaz,伊朗,Iran,31.3183,48.6706,100,100,0,36.711,35.822,-0.889,2.479,5.577,7.35,-2.684,-2.511,1.0,2.0,需第三/第四源投票,高温分层均值偏差 2.68°C > 2.00°C；单点绝对偏差 P95 5.58°C > 2.00°C
+jizan_saudi,吉赞,Jizan,沙特阿拉伯,Saudi Arabia,16.8892,42.5511,100,100,0,33.984,32.547,-1.437,1.691,4.121,4.76,-1.748,-2.906,1.0,2.0,需第三/第四源投票,抽样均值偏差 1.44°C > 1.00°C；高温分层均值偏差 2.91°C > 2.00°C；单点绝对偏差 P95 4.12°C > 2.00°C
+kuwait_city,科威特市,Kuwait City,科威特,Kuwait,29.3759,47.9774,100,100,0,34.169,34.251,0.082,1.48,3.101,3.9,-0.247,-0.493,1.0,2.0,需第三/第四源投票,单点绝对偏差 P95 3.10°C > 2.00°C
