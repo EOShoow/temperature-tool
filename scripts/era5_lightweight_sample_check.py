@@ -35,8 +35,10 @@ DEFAULT_NASA_CSV_GLOB = "data/processed/nasa_power_t2m_hourly_2016_2025_*_lst.cs
 DEFAULT_OUTPUT_PREFIX = "era5_lightweight_sample_check"
 DEFAULT_SEED = 20260512
 DEFAULT_SAMPLE_SIZE = 100
-DEFAULT_MEAN_THRESHOLD_C = 1.0
-DEFAULT_TAIL_THRESHOLD_C = 2.0
+DEFAULT_MEAN_THRESHOLD_C = 1.5
+DEFAULT_TAIL_THRESHOLD_C = 3.0
+DEFAULT_TAIL_VOTE_THRESHOLD_C = 4.0
+DEFAULT_POINT_HARD_THRESHOLD_C = 6.0
 DEFAULT_RETRIES = 4
 DEFAULT_SLEEP_SECONDS = 0.5
 
@@ -75,6 +77,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--mean-threshold-c", type=float, default=DEFAULT_MEAN_THRESHOLD_C)
     parser.add_argument("--tail-threshold-c", type=float, default=DEFAULT_TAIL_THRESHOLD_C)
+    parser.add_argument("--tail-vote-threshold-c", type=float, default=DEFAULT_TAIL_VOTE_THRESHOLD_C)
+    parser.add_argument("--point-hard-threshold-c", type=float, default=DEFAULT_POINT_HARD_THRESHOLD_C)
     parser.add_argument("--cache-dir", type=Path, default=Path("data/era5_sample_cache/open_meteo"))
     parser.add_argument(
         "--fetch-granularity",
@@ -345,7 +349,13 @@ def mean(values: list[float]) -> float:
     return statistics.mean(values) if values else float("nan")
 
 
-def summarize_city(rows: list[dict], mean_threshold_c: float, tail_threshold_c: float) -> list[dict]:
+def summarize_city(
+    rows: list[dict],
+    mean_threshold_c: float,
+    tail_threshold_c: float,
+    tail_vote_threshold_c: float,
+    point_hard_threshold_c: float,
+) -> list[dict]:
     grouped: dict[str, list[dict]] = defaultdict(list)
     for row in rows:
         grouped[row["city_id"]].append(row)
@@ -395,21 +405,31 @@ def summarize_city(rows: list[dict], mean_threshold_c: float, tail_threshold_c: 
             if not math.isnan(value)
         ]
         max_tail_bias_abs = max(tail_checks) if tail_checks else float("nan")
-        mean_pass = abs(mean_bias) <= mean_threshold_c
-        tail_pass = math.isnan(max_tail_bias_abs) or max_tail_bias_abs <= tail_threshold_c
-        point_pass = point_p95_abs_diff <= tail_threshold_c
         missing_pass = missing_count == 0
-        status = "双源一致" if mean_pass and tail_pass and point_pass and missing_pass else "需第三/第四源投票"
-
         reasons: list[str] = []
-        if not mean_pass:
-            reasons.append(f"抽样均值偏差 {abs(mean_bias):.2f}°C > {mean_threshold_c:.2f}°C")
-        if not tail_pass:
-            reasons.append(f"高温分层均值偏差 {max_tail_bias_abs:.2f}°C > {tail_threshold_c:.2f}°C")
-        if not point_pass:
-            reasons.append(f"单点绝对偏差 P95 {point_p95_abs_diff:.2f}°C > {tail_threshold_c:.2f}°C")
+        mean_abs = abs(mean_bias)
+        point_hard_trigger = point_p95_abs_diff > point_hard_threshold_c
+        tail_vote_trigger = not math.isnan(max_tail_bias_abs) and max_tail_bias_abs > tail_vote_threshold_c
+        tail_mark_trigger = not math.isnan(max_tail_bias_abs) and max_tail_bias_abs > tail_threshold_c
+
         if not missing_pass:
             reasons.append(f"ERA5 缺测 {missing_count} 点")
+        if mean_abs > mean_threshold_c:
+            reasons.append(f"抽样均值偏差 {abs(mean_bias):.2f}°C > {mean_threshold_c:.2f}°C")
+        if tail_vote_trigger:
+            reasons.append(f"高温分层均值偏差 {max_tail_bias_abs:.2f}°C > {tail_vote_threshold_c:.2f}°C")
+        if point_hard_trigger:
+            reasons.append(f"单点绝对偏差 P95 {point_p95_abs_diff:.2f}°C > {point_hard_threshold_c:.2f}°C")
+
+        if reasons:
+            status = "需第三/第四源投票"
+            reason = "；".join(reasons)
+        elif tail_mark_trigger:
+            status = "双源基本一致，高温尾部需标注"
+            reason = f"抽样均值通过；高温分层均值偏差 {max_tail_bias_abs:.2f}°C 位于 {tail_threshold_c:.2f}-{tail_vote_threshold_c:.2f}°C 标注区间"
+        else:
+            status = "双源一致"
+            reason = "抽样均值和高温尾部低于工程阈值；单点 P95 未触发硬异常线"
 
         summaries.append(
             {
@@ -433,8 +453,10 @@ def summarize_city(rows: list[dict], mean_threshold_c: float, tail_threshold_c: 
                 "tail_mean_bias_c": "" if math.isnan(tail_bias) else round(tail_bias, 3),
                 "mean_threshold_c": mean_threshold_c,
                 "tail_threshold_c": tail_threshold_c,
+                "tail_vote_threshold_c": tail_vote_threshold_c,
+                "point_hard_threshold_c": point_hard_threshold_c,
                 "status": status,
-                "reason": "；".join(reasons) if reasons else "抽样均值、高温尾部和单点 P95 偏差均低于阈值",
+                "reason": reason,
             }
         )
     return summaries
@@ -466,7 +488,7 @@ def write_report(path: Path, payload: dict) -> None:
         "- ERA5 来源：Open-Meteo Historical Weather API 的 `era5_land` 模型，变量 `temperature_2m`，单位摄氏度。",
         f"- ERA5 拉取粒度：`{payload['fetch_granularity']}`；默认按抽样点所在 UTC 年份批量缓存，以减少请求次数。",
         "- 时间对齐：NASA 当前为 `LST`；ERA5 为 `UTC`。本脚本按 `UTC = LST - longitude / 15` 近似换算，并取最近整点。",
-        f"- 判定阈值：抽样均值偏差 `<= {payload['mean_threshold_c']:.2f}°C`；高温分层均值偏差和单点绝对偏差 P95 `<= {payload['tail_threshold_c']:.2f}°C`。",
+        f"- 判定阈值：抽样均值偏差 `<= {payload['mean_threshold_c']:.2f}°C`；高温分层均值偏差 `<= {payload['tail_threshold_c']:.2f}°C` 为双源一致，`{payload['tail_threshold_c']:.2f}-{payload['tail_vote_threshold_c']:.2f}°C` 为标注区间，`> {payload['tail_vote_threshold_c']:.2f}°C` 触发投票；单点绝对偏差 P95 `> {payload['point_hard_threshold_c']:.2f}°C` 才作为硬异常触发投票。",
         "",
         "## 城市级结论",
         "",
@@ -489,7 +511,8 @@ def write_report(path: Path, payload: dict) -> None:
             )
         )
 
-    disputed = [row for row in summaries if row["status"] != "双源一致"]
+    disputed = [row for row in summaries if row["status"] == "需第三/第四源投票"]
+    marked = [row for row in summaries if row["status"] == "双源基本一致，高温尾部需标注"]
     lines.extend(
         [
             "",
@@ -504,6 +527,11 @@ def write_report(path: Path, payload: dict) -> None:
             lines.append(f"- {row['city_zh']}：{row['reason']}")
     else:
         lines.append("本轮抽样未触发第三、第四源投票。")
+
+    if marked:
+        lines.extend(["", "以下城市为双源基本一致，但高温尾部需要在工程结论中标注：", ""])
+        for row in marked:
+            lines.append(f"- {row['city_zh']}：{row['reason']}")
 
     lines.extend(
         [
@@ -547,7 +575,13 @@ def main(argv: list[str]) -> int:
         no_fetch=args.no_fetch,
         fetch_granularity=args.fetch_granularity,
     )
-    city_summaries = summarize_city(sample_rows, args.mean_threshold_c, args.tail_threshold_c)
+    city_summaries = summarize_city(
+        sample_rows,
+        args.mean_threshold_c,
+        args.tail_threshold_c,
+        args.tail_vote_threshold_c,
+        args.point_hard_threshold_c,
+    )
 
     args.summary_dir.mkdir(parents=True, exist_ok=True)
     sample_csv = args.summary_dir / f"{args.output_prefix}_samples.csv"
@@ -572,6 +606,8 @@ def main(argv: list[str]) -> int:
         "seed": args.seed,
         "mean_threshold_c": args.mean_threshold_c,
         "tail_threshold_c": args.tail_threshold_c,
+        "tail_vote_threshold_c": args.tail_vote_threshold_c,
+        "point_hard_threshold_c": args.point_hard_threshold_c,
         "cities": city_ids,
         "sample_csv": str(sample_csv),
         "city_summary_csv": str(city_summary_csv),

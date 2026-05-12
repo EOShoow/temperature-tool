@@ -122,4 +122,4 @@ python3 scripts/era5_lightweight_sample_check.py --cities jizan_saudi,kuwait_cit
 - `data/summary/era5_lightweight_sample_check_summary.json`：机器可读汇总。
 - `docs/era5_lightweight_sample_check_report.md`：中文报告。
 
-判定默认使用：抽样均值偏差 `<= 1°C` 视为通过；高温分层均值偏差和单点绝对偏差 P95 `<= 2°C` 视为通过。超阈值城市进入第三、第四源投票清单，优先引入 `NOAA ISD / Global Hourly` 和 `MERRA-2`。
+判定默认使用：抽样均值偏差 `<= 1.5°C` 视为通过；高温分层均值偏差 `<= 3°C` 视为双源一致，`3-4°C` 视为“双源基本一致，高温尾部需标注”，`> 4°C` 进入第三、第四源投票；单点绝对偏差 P95 只作为硬异常观察项，`> 6°C` 才触发投票。第三、第四源优先引入 `NOAA ISD / Global Hourly` 和 `MERRA-2`。

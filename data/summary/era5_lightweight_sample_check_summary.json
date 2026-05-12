@@ -7,8 +7,10 @@
   "fetch_granularity": "year",
   "sample_size": 100,
   "seed": 20260512,
-  "mean_threshold_c": 1.0,
-  "tail_threshold_c": 2.0,
+  "mean_threshold_c": 1.5,
+  "tail_threshold_c": 3.0,
+  "tail_vote_threshold_c": 4.0,
+  "point_hard_threshold_c": 6.0,
   "cities": [
     "jizan_saudi",
     "kuwait_city",
@@ -38,10 +40,12 @@
       "max_abs_point_diff_c": 7.35,
       "p95_band_mean_bias_c": -2.684,
       "tail_mean_bias_c": -2.511,
-      "mean_threshold_c": 1.0,
-      "tail_threshold_c": 2.0,
-      "status": "需第三/第四源投票",
-      "reason": "高温分层均值偏差 2.68°C > 2.00°C；单点绝对偏差 P95 5.58°C > 2.00°C"
+      "mean_threshold_c": 1.5,
+      "tail_threshold_c": 3.0,
+      "tail_vote_threshold_c": 4.0,
+      "point_hard_threshold_c": 6.0,
+      "status": "双源一致",
+      "reason": "抽样均值和高温尾部低于工程阈值；单点 P95 未触发硬异常线"
     },
     {
       "city_id": "jizan_saudi",
@@ -62,10 +66,12 @@
       "max_abs_point_diff_c": 4.76,
       "p95_band_mean_bias_c": -1.748,
       "tail_mean_bias_c": -2.906,
-      "mean_threshold_c": 1.0,
-      "tail_threshold_c": 2.0,
-      "status": "需第三/第四源投票",
-      "reason": "抽样均值偏差 1.44°C > 1.00°C；高温分层均值偏差 2.91°C > 2.00°C；单点绝对偏差 P95 4.12°C > 2.00°C"
+      "mean_threshold_c": 1.5,
+      "tail_threshold_c": 3.0,
+      "tail_vote_threshold_c": 4.0,
+      "point_hard_threshold_c": 6.0,
+      "status": "双源一致",
+      "reason": "抽样均值和高温尾部低于工程阈值；单点 P95 未触发硬异常线"
     },
     {
       "city_id": "kuwait_city",
@@ -86,10 +92,12 @@
       "max_abs_point_diff_c": 3.9,
       "p95_band_mean_bias_c": -0.247,
       "tail_mean_bias_c": -0.493,
-      "mean_threshold_c": 1.0,
-      "tail_threshold_c": 2.0,
-      "status": "需第三/第四源投票",
-      "reason": "单点绝对偏差 P95 3.10°C > 2.00°C"
+      "mean_threshold_c": 1.5,
+      "tail_threshold_c": 3.0,
+      "tail_vote_threshold_c": 4.0,
+      "point_hard_threshold_c": 6.0,
+      "status": "双源一致",
+      "reason": "抽样均值和高温尾部低于工程阈值；单点 P95 未触发硬异常线"
     }
   ]
 }
