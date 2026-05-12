@@ -471,13 +471,9 @@ const COUNTRY_QUERY_ALIASES = {
 const elements = {
   csvInput: document.getElementById("csvInput"),
   fileInput: document.getElementById("fileInput"),
-  dualSourceFile: document.getElementById("dualSourceFile"),
-  dualSourceStatus: document.getElementById("dualSourceStatus"),
-  clearDualSource: document.getElementById("clearDualSource"),
   loadHotCities: document.getElementById("loadHotCities"),
   downloadTemplate: document.getElementById("downloadTemplate"),
   geocodeQuery: document.getElementById("geocodeQuery"),
-  geocodeCountry: document.getElementById("geocodeCountry"),
   geocodeButton: document.getElementById("geocodeButton"),
   geocodeStatus: document.getElementById("geocodeStatus"),
   geocodeResults: document.getElementById("geocodeResults"),
@@ -930,11 +926,6 @@ function setCountryCityStatus(message, error = false) {
   elements.countryCityStatus.classList.toggle("error", error);
 }
 
-function setDualSourceStatus(message, error = false) {
-  elements.dualSourceStatus.textContent = message;
-  elements.dualSourceStatus.classList.toggle("error", error);
-}
-
 function countryCityFailureMessage(error) {
   const message = error?.message || String(error);
   return `国家城市候选读取失败：${message}。仍可使用城市名单点查询或手工填写经纬度。`;
@@ -1000,7 +991,7 @@ function renderCountryCityCandidates(candidates) {
 
 async function runGeocodeSearch() {
   const query = elements.geocodeQuery.value.trim();
-  const countryHint = elements.geocodeCountry.value.trim();
+  const countryHint = "";
   if (!query) {
     setGeocodeStatus("请输入城市名。", true);
     elements.geocodeResults.innerHTML = "";
@@ -1133,7 +1124,7 @@ async function runCountryCitySearch() {
     renderCountryCityCandidates(results);
     if (missingBuiltIn) {
       setCountryCityStatus(
-        `当前未内置“${countryName}”的主要经济城市候选；请使用“按城市名添加点位”逐个查询，或手工输入经纬度。`,
+        `当前未内置“${countryName}”的主要经济城市候选；请使用“搜城市（联网）”逐个查询，或手工输入经纬度。`,
       );
       return;
     }
@@ -1148,85 +1139,6 @@ async function runCountryCitySearch() {
   }
 }
 
-function normalizeDualSourceRow(row) {
-  const siteId = String(firstPresent(row, ["city_id", "site_id", "id"])).trim();
-  const status = String(firstPresent(row, ["status", "dual_source_status", "一致状态"])).trim();
-  if (!siteId || !status) return null;
-  return {
-    site_id: siteId,
-    name: firstPresent(row, ["city_zh", "name", "city_name", "城市"]),
-    country: firstPresent(row, ["country_zh", "country", "国家"]),
-    sample_count: firstPresent(row, ["sample_count", "样本"]),
-    compared_count: firstPresent(row, ["compared_count", "可比较样本"]),
-    missing_count: firstPresent(row, ["missing_count", "缺测"]),
-    nasa_mean_sample_t2m_c: firstPresent(row, ["nasa_mean_sample_t2m_c", "nasa_mean"]),
-    era5_mean_sample_t2m_c: firstPresent(row, ["era5_mean_sample_t2m_c", "era5_mean"]),
-    mean_bias_era5_minus_nasa_c: firstPresent(row, ["mean_bias_era5_minus_nasa_c", "mean_bias"]),
-    p95_abs_point_diff_c: firstPresent(row, ["p95_abs_point_diff_c", "point_p95_abs_diff"]),
-    p95_band_mean_bias_c: firstPresent(row, ["p95_band_mean_bias_c", "p95_bias"]),
-    tail_mean_bias_c: firstPresent(row, ["tail_mean_bias_c", "tail_bias"]),
-    max_window_mean_bias_c: firstPresent(row, ["max_window_mean_bias_c", "max_window_bias"]),
-    max_window_label: firstPresent(row, ["max_window_label", "max_window"]),
-    window_mean_biases: firstPresent(row, ["window_mean_biases", "window_biases"]),
-    exceeded_items: firstPresent(row, ["exceeded_items", "超限项"]),
-    exceeded_detail: firstPresent(row, ["exceeded_detail", "超限说明"]),
-    validation_rule: firstPresent(row, ["validation_rule", "校验规则"]),
-    status,
-    reason: firstPresent(row, ["reason", "备注", "说明"]),
-  };
-}
-
-function parseDualSourceEvidence(text, filename) {
-  const trimmed = text.trim();
-  let payload = null;
-  let rows = [];
-  if (!trimmed) {
-    throw new Error("双源校验文件为空。");
-  }
-  if (filename.toLowerCase().endsWith(".json") || trimmed.startsWith("{") || trimmed.startsWith("[")) {
-    payload = JSON.parse(trimmed);
-    const rawRows = Array.isArray(payload) ? payload : payload.city_summaries;
-    if (!Array.isArray(rawRows)) {
-      throw new Error("JSON 中未找到 city_summaries 数组。");
-    }
-    rows = rawRows.map(normalizeDualSourceRow).filter(Boolean);
-  } else {
-    rows = indexCsvRows(parseCsv(trimmed)).map(normalizeDualSourceRow).filter(Boolean);
-    payload = {
-      method: "Imported dual-source consistency CSV",
-      city_summaries: rows,
-    };
-  }
-  if (!rows.length) {
-    throw new Error("未解析到包含 city_id/site_id 与 status 的城市级校验结果。");
-  }
-  const bySiteId = new Map();
-  for (const row of rows) {
-    bySiteId.set(normalizeSearchText(row.site_id), row);
-  }
-  return {
-    source_file: filename,
-    loaded_at: new Date().toISOString(),
-    method: payload.method || "",
-    provider: payload.provider || "",
-    provider_model: payload.provider_model || "",
-    fetch_granularity: payload.fetch_granularity || "",
-    sample_size: payload.sample_size || "",
-    seed: payload.seed || "",
-    window_days: payload.window_days || "",
-    windows: payload.windows || [],
-    status: payload.status || "已导入",
-    thresholds: {
-      mean_threshold_c: payload.mean_threshold_c ?? "",
-      tail_threshold_c: payload.tail_threshold_c ?? "",
-      tail_vote_threshold_c: payload.tail_vote_threshold_c ?? "",
-      point_hard_threshold_c: payload.point_hard_threshold_c ?? "",
-    },
-    rows,
-    bySiteId,
-  };
-}
-
 function dualSourceForSite(siteId) {
   return dualSourceEvidence?.bySiteId.get(normalizeSearchText(siteId)) || null;
 }
@@ -1234,28 +1146,6 @@ function dualSourceForSite(siteId) {
 function dualSourceRuleText() {
   const windows = DUAL_SOURCE_WINDOWS.map((windowDef) => `${String(windowDef.month).padStart(2, "0")}-${String(windowDef.day).padStart(2, "0")}起${DUAL_SOURCE_WINDOW_DAYS}天`).join("、");
   return `固定三周窗口：${windows}；总体均值偏差<=${DUAL_SOURCE_MEAN_THRESHOLD_C.toFixed(1)}°C；最大窗口均值偏差<=${DUAL_SOURCE_TAIL_THRESHOLD_C.toFixed(1)}°C为双源一致，${DUAL_SOURCE_TAIL_THRESHOLD_C.toFixed(1)}-${DUAL_SOURCE_TAIL_VOTE_THRESHOLD_C.toFixed(1)}°C需标注，>${DUAL_SOURCE_TAIL_VOTE_THRESHOLD_C.toFixed(1)}°C或单点P95>${DUAL_SOURCE_POINT_HARD_THRESHOLD_C.toFixed(1)}°C需第三/第四源投票。`;
-}
-
-async function loadDualSourceEvidenceFromFile(file) {
-  if (!file) return;
-  try {
-    const text = await file.text();
-    dualSourceEvidence = parseDualSourceEvidence(text, file.name);
-    setDualSourceStatus(`已导入 ${dualSourceEvidence.rows.length} 个城市的双源校验结果：${file.name}`);
-    if (activeResult) {
-      setWarning("双源证据已导入；请重新开始拉取，让新的 Excel 融合该证据。");
-    }
-  } catch (error) {
-    dualSourceEvidence = null;
-    elements.dualSourceFile.value = "";
-    setDualSourceStatus(`双源校验文件解析失败：${error.message || error}`, true);
-  }
-}
-
-function clearDualSourceEvidence() {
-  dualSourceEvidence = null;
-  elements.dualSourceFile.value = "";
-  setDualSourceStatus("未导入；自动校验开启时会生成本次证据。");
 }
 
 function percentile(values, percent) {
@@ -1874,8 +1764,6 @@ function setBusy(isBusy) {
   elements.runButton.disabled = isBusy;
   elements.clearCache.disabled = isBusy;
   elements.fileInput.disabled = isBusy;
-  elements.dualSourceFile.disabled = isBusy;
-  elements.clearDualSource.disabled = isBusy;
   elements.autoDualSource.disabled = isBusy;
   elements.geocodeButton.disabled = isBusy;
   elements.countryCityButton.disabled = isBusy;
@@ -2359,7 +2247,6 @@ async function runExport() {
       } else if (!warnings.length) {
         setWarning("");
       }
-      setDualSourceStatus(`自动双源校验完成：${dualSourceEvidence.rows.length} 个点位。${dualSourceRuleText()}`);
       summaryRows = siteResults.map((item) =>
         summarizeSite(item.site, item.rows, item.threshold, item.cacheHits, item.cacheMisses, item.failedYears),
       );
@@ -2487,23 +2374,10 @@ elements.fileInput.addEventListener("change", async () => {
   if (!file) return;
   elements.csvInput.value = await file.text();
 });
-elements.dualSourceFile.addEventListener("change", async () => {
-  const file = elements.dualSourceFile.files?.[0];
-  await loadDualSourceEvidenceFromFile(file);
-});
-elements.clearDualSource.addEventListener("click", () => {
-  clearDualSourceEvidence();
-});
 elements.geocodeButton.addEventListener("click", () => {
   runGeocodeSearch();
 });
 elements.geocodeQuery.addEventListener("keydown", (event) => {
-  if (event.key === "Enter") {
-    event.preventDefault();
-    runGeocodeSearch();
-  }
-});
-elements.geocodeCountry.addEventListener("keydown", (event) => {
   if (event.key === "Enter") {
     event.preventDefault();
     runGeocodeSearch();

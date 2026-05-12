@@ -5,7 +5,7 @@
 把 NASA POWER 主数据和 ERA5-Land 固定窗口校验融合成一个可迁移工程口径：
 
 - NASA POWER 仍是网页工具和 Excel 工作簿的主数据源。
-- ERA5-Land 作为默认开启的自动质量证据层；用户也可关闭自动校验或导入已有证据兜底。
+- ERA5-Land 作为默认开启的自动质量证据层；用户也可关闭自动校验。
 - 双源一致结论进入 Excel 摘要、运行记录和单独的 `双源一致校验` sheet。
 
 ## 工程分层
@@ -14,7 +14,7 @@
 |---|---|---|
 | 主数据层 | `web/index.html` + `web/app.js` | 按经纬度拉 NASA POWER Hourly `T2M`，计算超温占比，导出 Excel。 |
 | 校验层 | 网页自动校验 + `scripts/era5_lightweight_sample_check.py` | 网页默认自动请求 Open-Meteo ERA5-Land 固定三周窗口；脚本用于离线批量报告。 |
-| 融合层 | 网页“双源一致证据”区域 | 自动结果优先；导入校验 JSON/CSV 作为兜底，按 `site_id/city_id` 合并到摘要和 Excel。 |
+| 融合层 | 网页摘要和 Excel | 自动校验结果按 `site_id` 合并到摘要和 Excel。 |
 
 ## 状态口径
 
@@ -34,13 +34,11 @@
    - `双源一致校验`：城市级规则触发结果。
    - `双源抽样明细`：固定窗口小时的 NASA/ERA5 差值。
    - `运行记录`：双源模型、固定窗口和阈值。
-4. 离线兜底：如果浏览器端 ERA5 请求失败，运行 ERA5-Land 抽样校验脚本：
+4. 离线兜底：如果浏览器端 ERA5 请求失败，可运行 ERA5-Land 抽样校验脚本生成离线报告：
 
 ```bash
 python3 scripts/era5_lightweight_sample_check.py --cities jizan_saudi,kuwait_city,ahvaz
 ```
-
-5. 在网页“双源一致证据”处导入 `data/summary/era5_lightweight_sample_check_summary.json`，作为已有校验证据兜底。
 
 ## 边界
 

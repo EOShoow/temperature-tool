@@ -103,7 +103,6 @@ h3 {
 .readme-panel p,
 .note,
 #inputHint,
-#dualSourceStatus,
 .current-task,
 .geocode-status,
 .attribution,
@@ -144,8 +143,7 @@ h3 {
 }
 
 .geocode-box,
-.country-city-box,
-.dual-source-box {
+.country-city-box {
   border-bottom: 1px solid var(--line);
   margin-bottom: 16px;
   padding-bottom: 16px;
@@ -154,23 +152,22 @@ h3 {
 .geocode-form,
 .country-city-form {
   display: grid;
-  grid-template-columns: minmax(160px, 1fr) minmax(150px, 220px) auto;
+  grid-template-columns: minmax(160px, 1fr) auto;
   gap: 10px;
   align-items: end;
   margin: 12px 0 8px;
-}
-
-.country-city-form {
-  grid-template-columns: minmax(160px, 1fr) auto;
 }
 
 .geocode-status {
   min-height: 22px;
 }
 
-.geocode-status.error,
-#dualSourceStatus.error {
+.geocode-status.error {
   color: var(--error);
+}
+
+.readme-panel a {
+  color: var(--brand);
 }
 
 .candidate-list {

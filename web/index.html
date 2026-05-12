@@ -20,17 +20,13 @@
         <section class="panel input-panel">
           <div class="geocode-box">
             <div>
-              <h2>按城市名添加点位</h2>
+              <h2>搜城市（联网）</h2>
               <p>输入城市名后点击查询，先查内置城市表；未命中时查询 OpenStreetMap Nominatim，确认后加入下方 CSV。</p>
             </div>
             <div class="geocode-form">
               <label>
                 城市名
                 <input id="geocodeQuery" type="text" placeholder="例如：迪拜 / Dubai, UAE" autocomplete="off" />
-              </label>
-              <label>
-                国家/地区提示
-                <input id="geocodeCountry" type="text" placeholder="可选，例如：阿联酋 / UAE" autocomplete="off" />
               </label>
               <button type="button" id="geocodeButton">查经纬度</button>
             </div>
@@ -43,7 +39,7 @@
 
           <div class="country-city-box">
             <div>
-              <h2>按国家列出城市</h2>
+              <h2>搜国家（代表城市）</h2>
               <p>输入国家名称后点击查询，列出内置 Top 经济城市候选，再手动加入下方 CSV。</p>
             </div>
             <div class="country-city-form">
@@ -62,7 +58,7 @@
 
           <div class="panel-head">
             <div>
-              <h2>坐标输入</h2>
+              <h2>批量坐标输入</h2>
               <p>字段：site_id,name,latitude,longitude,country。latitude 和 longitude 必填。</p>
             </div>
             <div class="button-row">
@@ -79,20 +75,6 @@
             <span id="inputHint">可直接粘贴，也可以上传 CSV 文件。</span>
           </div>
 
-          <div class="dual-source-box">
-            <div>
-              <h2>双源一致证据</h2>
-              <p>默认在拉取 NASA 后自动请求 ERA5-Land 固定三周窗口；也可以导入已有校验证据作为兜底。</p>
-            </div>
-            <div class="file-row">
-              <label class="file-label">
-                导入已有证据
-                <input id="dualSourceFile" type="file" accept=".json,.csv,application/json,text/csv" />
-              </label>
-              <button type="button" id="clearDualSource">移除证据</button>
-              <span id="dualSourceStatus">未导入；自动校验开启时会生成本次证据。</span>
-            </div>
-          </div>
         </section>
 
         <aside class="panel settings-panel">
@@ -100,7 +82,7 @@
           <div class="form-grid">
             <label>
               起始年份
-              <input id="startYear" type="number" min="1981" max="2100" value="2016" />
+              <input id="startYear" type="number" min="1981" max="2100" value="2025" />
             </label>
             <label>
               结束年份
@@ -178,11 +160,11 @@
         <div class="readme-grid">
           <div>
             <h3>数据口径</h3>
-            <p>数据源为 NASA POWER Hourly API，参数为 <code>T2M</code>，即 2 米气温小时平均值，单位摄氏度。默认使用 <code>LST</code> 当地太阳时。</p>
+            <p>数据源为 NASA POWER Hourly API，参数为 <code>T2M</code>，即 2 米气温小时平均值，单位摄氏度。默认使用 <code>LST</code> 当地太阳时。官网：<a href="https://power.larc.nasa.gov/" target="_blank" rel="noreferrer">NASA POWER</a>；接口文档：<a href="https://power.larc.nasa.gov/docs/services/api/temporal/hourly/" target="_blank" rel="noreferrer">Hourly API</a>。</p>
           </div>
           <div>
             <h3>隐私边界</h3>
-            <p>坐标、缓存和导出结果都在浏览器本地处理。本工具没有自有服务器；只有 NASA API 会收到经纬度请求。</p>
+            <p>坐标、缓存和导出结果都在浏览器本地处理。本工具没有自有服务器；NASA POWER 和自动双源校验使用的 Open-Meteo 会收到经纬度请求，城市联网查询会把地名发给 OpenStreetMap Nominatim。</p>
           </div>
           <div>
             <h3>缓存说明</h3>
@@ -190,7 +172,7 @@
           </div>
           <div>
             <h3>双源一致</h3>
-            <p>默认自动请求 ERA5-Land 固定三周窗口：每年 01-01、05-01、10-01 起各 7 天。规则为总体均值偏差≤1.5°C，最大窗口均值偏差≤3°C 为一致，3-4°C 需标注，>4°C 或单点P95>6°C 需投票。该口径是快速一致性证据，不等同于全年高温尾部全覆盖校验。</p>
+            <p>默认自动请求 ERA5-Land 固定三周窗口：每年 01-01、05-01、10-01 起各 7 天。规则为总体均值偏差≤1.5°C，最大窗口均值偏差≤3°C 为一致，3-4°C 需标注，>4°C 或单点P95>6°C 需投票。该口径是快速一致性证据，不等同于全年高温尾部全覆盖校验。官网：<a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo</a>；接口文档：<a href="https://open-meteo.com/en/docs/historical-weather-api" target="_blank" rel="noreferrer">Historical Weather API</a>。</p>
           </div>
           <div>
             <h3>本地运行文件</h3>
