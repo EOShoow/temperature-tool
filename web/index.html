@@ -41,6 +41,25 @@
             </p>
           </div>
 
+          <div class="country-city-box">
+            <div>
+              <h2>按国家列出城市</h2>
+              <p>输入国家名称后点击查询，列出内置城市、OSM 大城市和行政中心候选，再手动加入下方 CSV。</p>
+            </div>
+            <div class="country-city-form">
+              <label>
+                国家名称
+                <input id="countryCityQuery" type="text" placeholder="例如：阿联酋 / Saudi Arabia" autocomplete="off" />
+              </label>
+              <button type="button" id="countryCityButton">列出城市</button>
+            </div>
+            <div id="countryCityStatus" class="geocode-status">不会自动批量加入；每个候选都需要手动确认。</div>
+            <div id="countryCityResults" class="candidate-list" aria-live="polite"></div>
+            <p class="attribution">
+              国家城市列表来自内置表和 OpenStreetMap Overpass；人口和省会/行政中心信息取决于 OSM 标注完整度。
+            </p>
+          </div>
+
           <div class="panel-head">
             <div>
               <h2>坐标输入</h2>
