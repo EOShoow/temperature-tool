@@ -1,16 +1,12 @@
 "use strict";
 
-const TOOL_VERSION = "0.3.0";
+const TOOL_VERSION = "0.4.0";
 const NASA_ENDPOINT = "https://power.larc.nasa.gov/api/temporal/hourly/point";
 const NOMINATIM_ENDPOINT = "https://nominatim.openstreetmap.org/search";
-const OVERPASS_ENDPOINTS = [
-  "https://overpass-api.de/api/interpreter",
-  "https://overpass.kumi.systems/api/interpreter",
-];
 const PARAMETER = "T2M";
 const COMMUNITY = "AG";
 const GEOCODE_MIN_INTERVAL_MS = 1000;
-const COUNTRY_CITY_LIMIT = 60;
+const COUNTRY_CITY_LIMIT = 10;
 const DEFAULT_SAMPLE = [
   "site_id,name,latitude,longitude,country",
   "kuwait_city,科威特市,29.3759,47.9774,科威特",
@@ -127,81 +123,329 @@ const CITY_GAZETTEER = [
   },
 ];
 
-const CHINA_CITY_SEEDS = [
-  ["beijing", "北京", "Beijing", 39.9042, 116.4074, "直辖市"],
-  ["shanghai", "上海", "Shanghai", 31.2304, 121.4737, "直辖市"],
-  ["tianjin", "天津", "Tianjin", 39.3434, 117.3616, "直辖市"],
-  ["chongqing", "重庆", "Chongqing", 29.563, 106.5516, "直辖市"],
-  ["guangzhou", "广州", "Guangzhou", 23.1291, 113.2644, "省会/大城市"],
-  ["shenzhen", "深圳", "Shenzhen", 22.5431, 114.0579, "大城市"],
-  ["chengdu", "成都", "Chengdu", 30.5728, 104.0668, "省会/大城市"],
-  ["wuhan", "武汉", "Wuhan", 30.5928, 114.3055, "省会/大城市"],
-  ["xian", "西安", "Xi'an", 34.3416, 108.9398, "省会/大城市"],
-  ["nanjing", "南京", "Nanjing", 32.0603, 118.7969, "省会/大城市"],
-  ["hangzhou", "杭州", "Hangzhou", 30.2741, 120.1551, "省会/大城市"],
-  ["suzhou", "苏州", "Suzhou", 31.2989, 120.5853, "大城市"],
-  ["zhengzhou", "郑州", "Zhengzhou", 34.7466, 113.6254, "省会/大城市"],
-  ["changsha", "长沙", "Changsha", 28.2282, 112.9388, "省会/大城市"],
-  ["shenyang", "沈阳", "Shenyang", 41.8057, 123.4315, "省会/大城市"],
-  ["dalian", "大连", "Dalian", 38.914, 121.6147, "大城市"],
-  ["harbin", "哈尔滨", "Harbin", 45.8038, 126.5349, "省会"],
-  ["changchun", "长春", "Changchun", 43.8171, 125.3235, "省会"],
-  ["jinan", "济南", "Jinan", 36.6512, 117.1201, "省会"],
-  ["qingdao", "青岛", "Qingdao", 36.0671, 120.3826, "大城市"],
-  ["fuzhou", "福州", "Fuzhou", 26.0745, 119.2965, "省会"],
-  ["xiamen", "厦门", "Xiamen", 24.4798, 118.0894, "大城市"],
-  ["hefei", "合肥", "Hefei", 31.8206, 117.2272, "省会"],
-  ["nanchang", "南昌", "Nanchang", 28.682, 115.8582, "省会"],
-  ["kunming", "昆明", "Kunming", 25.0389, 102.7183, "省会"],
-  ["guiyang", "贵阳", "Guiyang", 26.647, 106.6302, "省会"],
-  ["nanning", "南宁", "Nanning", 22.817, 108.3669, "自治区首府"],
-  ["haikou", "海口", "Haikou", 20.0444, 110.1999, "省会"],
-  ["taiyuan", "太原", "Taiyuan", 37.8706, 112.5489, "省会"],
-  ["shijiazhuang", "石家庄", "Shijiazhuang", 38.0428, 114.5149, "省会"],
-  ["hohhot", "呼和浩特", "Hohhot", 40.8426, 111.7492, "自治区首府"],
-  ["lanzhou", "兰州", "Lanzhou", 36.0611, 103.8343, "省会"],
-  ["xining", "西宁", "Xining", 36.6171, 101.7782, "省会"],
-  ["yinchuan", "银川", "Yinchuan", 38.4872, 106.2309, "自治区首府"],
-  ["urumqi", "乌鲁木齐", "Urumqi", 43.8256, 87.6168, "自治区首府"],
-  ["lhasa", "拉萨", "Lhasa", 29.652, 91.1721, "自治区首府"],
-  ["ningbo", "宁波", "Ningbo", 29.8683, 121.544, "大城市"],
-  ["dongguan", "东莞", "Dongguan", 23.0207, 113.7518, "大城市"],
-  ["foshan", "佛山", "Foshan", 23.0215, 113.1214, "大城市"],
-  ["wuxi", "无锡", "Wuxi", 31.4912, 120.3119, "大城市"],
-  ["hong_kong", "香港", "Hong Kong", 22.3193, 114.1694, "特别行政区"],
-  ["macau", "澳门", "Macau", 22.1987, 113.5439, "特别行政区"],
-].map(([site_id, name_zh, name_en, latitude, longitude, label]) => ({
-  site_id,
-  name_zh,
-  name_en,
-  aliases: [name_en],
-  country_zh: "中国",
-  country_code: "cn",
-  latitude,
-  longitude,
-  source: "built-in",
-  confidence_label: label,
-}));
+const COUNTRY_TOP_CITY_SEEDS = {
+  cn: [
+    ["beijing", "北京", "Beijing", 39.9042, 116.4074, "首都/经济城市候选"],
+    ["shanghai", "上海", "Shanghai", 31.2304, 121.4737, "直辖市/经济城市候选"],
+    ["shenzhen", "深圳", "Shenzhen", 22.5431, 114.0579, "经济城市候选"],
+    ["guangzhou", "广州", "Guangzhou", 23.1291, 113.2644, "省会/经济城市候选"],
+    ["chongqing", "重庆", "Chongqing", 29.563, 106.5516, "直辖市/经济城市候选"],
+    ["suzhou", "苏州", "Suzhou", 31.2989, 120.5853, "经济城市候选"],
+    ["chengdu", "成都", "Chengdu", 30.5728, 104.0668, "省会/经济城市候选"],
+    ["hangzhou", "杭州", "Hangzhou", 30.2741, 120.1551, "省会/经济城市候选"],
+    ["wuhan", "武汉", "Wuhan", 30.5928, 114.3055, "省会/经济城市候选"],
+    ["nanjing", "南京", "Nanjing", 32.0603, 118.7969, "省会/经济城市候选"],
+  ],
+  us: [
+    ["new_york", "纽约", "New York", 40.7128, -74.006, "经济城市候选"],
+    ["los_angeles", "洛杉矶", "Los Angeles", 34.0522, -118.2437, "经济城市候选"],
+    ["chicago", "芝加哥", "Chicago", 41.8781, -87.6298, "经济城市候选"],
+    ["san_francisco", "旧金山", "San Francisco", 37.7749, -122.4194, "经济城市候选"],
+    ["washington_dc", "华盛顿", "Washington, D.C.", 38.9072, -77.0369, "首都/经济城市候选"],
+    ["dallas", "达拉斯", "Dallas", 32.7767, -96.797, "经济城市候选"],
+    ["houston", "休斯敦", "Houston", 29.7604, -95.3698, "经济城市候选"],
+    ["boston", "波士顿", "Boston", 42.3601, -71.0589, "经济城市候选"],
+    ["atlanta", "亚特兰大", "Atlanta", 33.749, -84.388, "经济城市候选"],
+    ["miami", "迈阿密", "Miami", 25.7617, -80.1918, "经济城市候选"],
+  ],
+  in: [
+    ["mumbai", "孟买", "Mumbai", 19.076, 72.8777, "经济城市候选"],
+    ["delhi", "德里", "Delhi", 28.7041, 77.1025, "首都圈/经济城市候选"],
+    ["bengaluru", "班加罗尔", "Bengaluru", 12.9716, 77.5946, "经济城市候选"],
+    ["hyderabad", "海得拉巴", "Hyderabad", 17.385, 78.4867, "经济城市候选"],
+    ["chennai", "金奈", "Chennai", 13.0827, 80.2707, "经济城市候选"],
+    ["pune", "浦那", "Pune", 18.5204, 73.8567, "经济城市候选"],
+    ["ahmedabad", "艾哈迈达巴德", "Ahmedabad", 23.0225, 72.5714, "经济城市候选"],
+    ["kolkata", "加尔各答", "Kolkata", 22.5726, 88.3639, "经济城市候选"],
+    ["surat", "苏拉特", "Surat", 21.1702, 72.8311, "经济城市候选"],
+    ["jaipur", "斋浦尔", "Jaipur", 26.9124, 75.7873, "经济城市候选"],
+  ],
+  jp: [
+    ["tokyo", "东京", "Tokyo", 35.6762, 139.6503, "首都/经济城市候选"],
+    ["osaka", "大阪", "Osaka", 34.6937, 135.5023, "经济城市候选"],
+    ["nagoya", "名古屋", "Nagoya", 35.1815, 136.9066, "经济城市候选"],
+    ["yokohama", "横滨", "Yokohama", 35.4437, 139.638, "经济城市候选"],
+    ["fukuoka", "福冈", "Fukuoka", 33.5902, 130.4017, "经济城市候选"],
+    ["sapporo", "札幌", "Sapporo", 43.0618, 141.3545, "经济城市候选"],
+    ["kobe", "神户", "Kobe", 34.6901, 135.1955, "经济城市候选"],
+    ["kyoto", "京都", "Kyoto", 35.0116, 135.7681, "经济城市候选"],
+    ["hiroshima", "广岛", "Hiroshima", 34.3853, 132.4553, "经济城市候选"],
+    ["sendai", "仙台", "Sendai", 38.2682, 140.8694, "经济城市候选"],
+  ],
+  de: [
+    ["berlin", "柏林", "Berlin", 52.52, 13.405, "首都/经济城市候选"],
+    ["munich", "慕尼黑", "Munich", 48.1351, 11.582, "经济城市候选"],
+    ["hamburg", "汉堡", "Hamburg", 53.5511, 9.9937, "经济城市候选"],
+    ["frankfurt", "法兰克福", "Frankfurt", 50.1109, 8.6821, "经济城市候选"],
+    ["cologne", "科隆", "Cologne", 50.9375, 6.9603, "经济城市候选"],
+    ["stuttgart", "斯图加特", "Stuttgart", 48.7758, 9.1829, "经济城市候选"],
+    ["dusseldorf", "杜塞尔多夫", "Dusseldorf", 51.2277, 6.7735, "经济城市候选"],
+    ["dortmund", "多特蒙德", "Dortmund", 51.5136, 7.4653, "经济城市候选"],
+    ["essen", "埃森", "Essen", 51.4556, 7.0116, "经济城市候选"],
+    ["leipzig", "莱比锡", "Leipzig", 51.3397, 12.3731, "经济城市候选"],
+  ],
+  gb: [
+    ["london", "伦敦", "London", 51.5074, -0.1278, "首都/经济城市候选"],
+    ["manchester", "曼彻斯特", "Manchester", 53.4808, -2.2426, "经济城市候选"],
+    ["birmingham_uk", "伯明翰", "Birmingham", 52.4862, -1.8904, "经济城市候选"],
+    ["glasgow", "格拉斯哥", "Glasgow", 55.8642, -4.2518, "经济城市候选"],
+    ["edinburgh", "爱丁堡", "Edinburgh", 55.9533, -3.1883, "经济城市候选"],
+    ["leeds", "利兹", "Leeds", 53.8008, -1.5491, "经济城市候选"],
+    ["liverpool", "利物浦", "Liverpool", 53.4084, -2.9916, "经济城市候选"],
+    ["bristol", "布里斯托尔", "Bristol", 51.4545, -2.5879, "经济城市候选"],
+    ["cambridge_uk", "剑桥", "Cambridge", 52.2053, 0.1218, "经济城市候选"],
+    ["oxford", "牛津", "Oxford", 51.752, -1.2577, "经济城市候选"],
+  ],
+  fr: [
+    ["paris", "巴黎", "Paris", 48.8566, 2.3522, "首都/经济城市候选"],
+    ["lyon", "里昂", "Lyon", 45.764, 4.8357, "经济城市候选"],
+    ["marseille", "马赛", "Marseille", 43.2965, 5.3698, "经济城市候选"],
+    ["toulouse", "图卢兹", "Toulouse", 43.6047, 1.4442, "经济城市候选"],
+    ["lille", "里尔", "Lille", 50.6292, 3.0573, "经济城市候选"],
+    ["bordeaux", "波尔多", "Bordeaux", 44.8378, -0.5792, "经济城市候选"],
+    ["nice", "尼斯", "Nice", 43.7102, 7.262, "经济城市候选"],
+    ["nantes", "南特", "Nantes", 47.2184, -1.5536, "经济城市候选"],
+    ["strasbourg", "斯特拉斯堡", "Strasbourg", 48.5734, 7.7521, "经济城市候选"],
+    ["rennes", "雷恩", "Rennes", 48.1173, -1.6778, "经济城市候选"],
+  ],
+  it: [
+    ["milan", "米兰", "Milan", 45.4642, 9.19, "经济城市候选"],
+    ["rome", "罗马", "Rome", 41.9028, 12.4964, "首都/经济城市候选"],
+    ["turin", "都灵", "Turin", 45.0703, 7.6869, "经济城市候选"],
+    ["naples", "那不勒斯", "Naples", 40.8518, 14.2681, "经济城市候选"],
+    ["bologna", "博洛尼亚", "Bologna", 44.4949, 11.3426, "经济城市候选"],
+    ["florence", "佛罗伦萨", "Florence", 43.7696, 11.2558, "经济城市候选"],
+    ["venice", "威尼斯", "Venice", 45.4408, 12.3155, "经济城市候选"],
+    ["genoa", "热那亚", "Genoa", 44.4056, 8.9463, "经济城市候选"],
+    ["verona", "维罗纳", "Verona", 45.4384, 10.9916, "经济城市候选"],
+    ["bari", "巴里", "Bari", 41.1171, 16.8719, "经济城市候选"],
+  ],
+  ca: [
+    ["toronto", "多伦多", "Toronto", 43.6532, -79.3832, "经济城市候选"],
+    ["montreal", "蒙特利尔", "Montreal", 45.5017, -73.5673, "经济城市候选"],
+    ["vancouver", "温哥华", "Vancouver", 49.2827, -123.1207, "经济城市候选"],
+    ["calgary", "卡尔加里", "Calgary", 51.0447, -114.0719, "经济城市候选"],
+    ["edmonton", "埃德蒙顿", "Edmonton", 53.5461, -113.4938, "经济城市候选"],
+    ["ottawa", "渥太华", "Ottawa", 45.4215, -75.6972, "首都/经济城市候选"],
+    ["winnipeg", "温尼伯", "Winnipeg", 49.8951, -97.1384, "经济城市候选"],
+    ["quebec_city", "魁北克市", "Quebec City", 46.8139, -71.208, "经济城市候选"],
+    ["hamilton_ca", "汉密尔顿", "Hamilton", 43.2557, -79.8711, "经济城市候选"],
+    ["waterloo", "滑铁卢", "Waterloo", 43.4643, -80.5204, "经济城市候选"],
+  ],
+  br: [
+    ["sao_paulo", "圣保罗", "Sao Paulo", -23.5558, -46.6396, "经济城市候选"],
+    ["rio_de_janeiro", "里约热内卢", "Rio de Janeiro", -22.9068, -43.1729, "经济城市候选"],
+    ["brasilia", "巴西利亚", "Brasilia", -15.7939, -47.8828, "首都/经济城市候选"],
+    ["belo_horizonte", "贝洛奥里藏特", "Belo Horizonte", -19.9167, -43.9345, "经济城市候选"],
+    ["curitiba", "库里蒂巴", "Curitiba", -25.4284, -49.2733, "经济城市候选"],
+    ["porto_alegre", "阿雷格里港", "Porto Alegre", -30.0346, -51.2177, "经济城市候选"],
+    ["recife", "累西腓", "Recife", -8.0476, -34.877, "经济城市候选"],
+    ["salvador", "萨尔瓦多", "Salvador", -12.9777, -38.5016, "经济城市候选"],
+    ["fortaleza", "福塔莱萨", "Fortaleza", -3.7319, -38.5267, "经济城市候选"],
+    ["campinas", "坎皮纳斯", "Campinas", -22.9099, -47.0626, "经济城市候选"],
+  ],
+  ru: [
+    ["moscow", "莫斯科", "Moscow", 55.7558, 37.6173, "首都/经济城市候选"],
+    ["saint_petersburg", "圣彼得堡", "Saint Petersburg", 59.9311, 30.3609, "经济城市候选"],
+    ["novosibirsk", "新西伯利亚", "Novosibirsk", 55.0084, 82.9357, "经济城市候选"],
+    ["yekaterinburg", "叶卡捷琳堡", "Yekaterinburg", 56.8389, 60.6057, "经济城市候选"],
+    ["kazan", "喀山", "Kazan", 55.7961, 49.1064, "经济城市候选"],
+    ["nizhny_novgorod", "下诺夫哥罗德", "Nizhny Novgorod", 56.2965, 43.9361, "经济城市候选"],
+    ["samara", "萨马拉", "Samara", 53.1959, 50.1008, "经济城市候选"],
+    ["ufa", "乌法", "Ufa", 54.7388, 55.9721, "经济城市候选"],
+    ["rostov_on_don", "顿河畔罗斯托夫", "Rostov-on-Don", 47.2357, 39.7015, "经济城市候选"],
+    ["krasnodar", "克拉斯诺达尔", "Krasnodar", 45.0355, 38.9753, "经济城市候选"],
+  ],
+  au: [
+    ["sydney", "悉尼", "Sydney", -33.8688, 151.2093, "经济城市候选"],
+    ["melbourne", "墨尔本", "Melbourne", -37.8136, 144.9631, "经济城市候选"],
+    ["brisbane", "布里斯班", "Brisbane", -27.4698, 153.0251, "经济城市候选"],
+    ["perth", "珀斯", "Perth", -31.9523, 115.8613, "经济城市候选"],
+    ["adelaide", "阿德莱德", "Adelaide", -34.9285, 138.6007, "经济城市候选"],
+    ["canberra", "堪培拉", "Canberra", -35.2809, 149.13, "首都/经济城市候选"],
+    ["gold_coast", "黄金海岸", "Gold Coast", -28.0167, 153.4, "经济城市候选"],
+    ["newcastle_au", "纽卡斯尔", "Newcastle", -32.9283, 151.7817, "经济城市候选"],
+    ["wollongong", "卧龙岗", "Wollongong", -34.4278, 150.8931, "经济城市候选"],
+    ["geelong", "吉朗", "Geelong", -38.1499, 144.3617, "经济城市候选"],
+  ],
+  mx: [
+    ["mexico_city", "墨西哥城", "Mexico City", 19.4326, -99.1332, "首都/经济城市候选"],
+    ["monterrey", "蒙特雷", "Monterrey", 25.6866, -100.3161, "经济城市候选"],
+    ["guadalajara", "瓜达拉哈拉", "Guadalajara", 20.6597, -103.3496, "经济城市候选"],
+    ["puebla", "普埃布拉", "Puebla", 19.0414, -98.2063, "经济城市候选"],
+    ["queretaro", "克雷塔罗", "Queretaro", 20.5888, -100.3899, "经济城市候选"],
+    ["tijuana", "蒂华纳", "Tijuana", 32.5149, -117.0382, "经济城市候选"],
+    ["leon_mx", "莱昂", "Leon", 21.1619, -101.6922, "经济城市候选"],
+    ["juarez", "华雷斯", "Ciudad Juarez", 31.6904, -106.4245, "经济城市候选"],
+    ["merida", "梅里达", "Merida", 20.9674, -89.5926, "经济城市候选"],
+    ["san_luis_potosi", "圣路易斯波托西", "San Luis Potosi", 22.1565, -100.9855, "经济城市候选"],
+  ],
+  sa: [
+    ["riyadh", "利雅得", "Riyadh", 24.7136, 46.6753, "首都/经济城市候选"],
+    ["jeddah", "吉达", "Jeddah", 21.4858, 39.1925, "经济城市候选"],
+    ["mecca", "麦加", "Mecca", 21.3891, 39.8579, "经济城市候选"],
+    ["dammam", "达曼", "Dammam", 26.4207, 50.0888, "经济城市候选"],
+    ["khobar", "胡拜尔", "Khobar", 26.2172, 50.1971, "经济城市候选"],
+    ["medina", "麦地那", "Medina", 24.5247, 39.5692, "经济城市候选"],
+    ["jubail", "朱拜勒", "Jubail", 27.0046, 49.646, "经济城市候选"],
+    ["taif", "塔伊夫", "Taif", 21.4373, 40.5127, "经济城市候选"],
+    ["jizan_saudi", "吉赞", "Jizan", 16.8892, 42.5511, "经济城市候选"],
+    ["yanbu", "延布", "Yanbu", 24.0889, 38.0618, "经济城市候选"],
+  ],
+  ae: [
+    ["dubai", "迪拜", "Dubai", 25.2048, 55.2708, "经济城市候选"],
+    ["abu_dhabi", "阿布扎比", "Abu Dhabi", 24.4539, 54.3773, "首都/经济城市候选"],
+    ["sharjah", "沙迦", "Sharjah", 25.3463, 55.4209, "经济城市候选"],
+    ["al_ain", "艾因", "Al Ain", 24.2075, 55.7447, "经济城市候选"],
+    ["ajman", "阿治曼", "Ajman", 25.4052, 55.5136, "经济城市候选"],
+    ["ras_al_khaimah", "哈伊马角", "Ras Al Khaimah", 25.8007, 55.9762, "经济城市候选"],
+    ["fujairah", "富查伊拉", "Fujairah", 25.1288, 56.3265, "经济城市候选"],
+    ["umm_al_quwain", "乌姆盖万", "Umm Al Quwain", 25.5647, 55.5552, "经济城市候选"],
+    ["jebel_ali", "杰贝阿里", "Jebel Ali", 24.9857, 55.0273, "经济城市候选"],
+    ["khor_fakkan", "豪尔费坎", "Khor Fakkan", 25.3313, 56.34199, "经济城市候选"],
+  ],
+  ir: [
+    ["tehran", "德黑兰", "Tehran", 35.6892, 51.389, "首都/经济城市候选"],
+    ["mashhad", "马什哈德", "Mashhad", 36.2605, 59.6168, "经济城市候选"],
+    ["isfahan", "伊斯法罕", "Isfahan", 32.6546, 51.668, "经济城市候选"],
+    ["karaj", "卡拉季", "Karaj", 35.8401, 50.9391, "经济城市候选"],
+    ["shiraz", "设拉子", "Shiraz", 29.5918, 52.5837, "经济城市候选"],
+    ["tabriz", "大不里士", "Tabriz", 38.0962, 46.2738, "经济城市候选"],
+    ["qom", "库姆", "Qom", 34.6399, 50.8759, "经济城市候选"],
+    ["ahvaz", "阿瓦士", "Ahvaz", 31.3183, 48.6706, "经济城市候选"],
+    ["kerman", "克尔曼", "Kerman", 30.2839, 57.0834, "经济城市候选"],
+    ["rasht", "拉什特", "Rasht", 37.2808, 49.5832, "经济城市候选"],
+  ],
+  iq: [
+    ["baghdad", "巴格达", "Baghdad", 33.3152, 44.3661, "首都/经济城市候选"],
+    ["basra", "巴士拉", "Basra", 30.5085, 47.7804, "经济城市候选"],
+    ["mosul", "摩苏尔", "Mosul", 36.34, 43.13, "经济城市候选"],
+    ["erbil", "埃尔比勒", "Erbil", 36.1911, 44.0092, "经济城市候选"],
+    ["najaf", "纳杰夫", "Najaf", 32.0259, 44.3462, "经济城市候选"],
+    ["karbala", "卡尔巴拉", "Karbala", 32.616, 44.0249, "经济城市候选"],
+    ["sulaymaniyah", "苏莱曼尼亚", "Sulaymaniyah", 35.5572, 45.4356, "经济城市候选"],
+    ["kirkuk", "基尔库克", "Kirkuk", 35.4676, 44.3922, "经济城市候选"],
+    ["nasiriyah", "纳西里耶", "Nasiriyah", 31.057, 46.2573, "经济城市候选"],
+    ["hilla", "希拉", "Hilla", 32.4798, 44.4328, "经济城市候选"],
+  ],
+  pk: [
+    ["karachi", "卡拉奇", "Karachi", 24.8607, 67.0011, "经济城市候选"],
+    ["lahore", "拉合尔", "Lahore", 31.5204, 74.3587, "经济城市候选"],
+    ["faisalabad", "费萨拉巴德", "Faisalabad", 31.4504, 73.135, "经济城市候选"],
+    ["islamabad", "伊斯兰堡", "Islamabad", 33.6844, 73.0479, "首都/经济城市候选"],
+    ["rawalpindi", "拉瓦尔品第", "Rawalpindi", 33.5651, 73.0169, "经济城市候选"],
+    ["multan", "木尔坦", "Multan", 30.1575, 71.5249, "经济城市候选"],
+    ["peshawar", "白沙瓦", "Peshawar", 34.0151, 71.5249, "经济城市候选"],
+    ["sialkot", "锡亚尔科特", "Sialkot", 32.4945, 74.5229, "经济城市候选"],
+    ["hyderabad_pk", "海得拉巴", "Hyderabad", 25.396, 68.3578, "经济城市候选"],
+    ["jacobabad", "雅各布阿巴德", "Jacobabad", 28.281, 68.4388, "高温城市候选"],
+  ],
+};
 
-const BUILT_IN_CITIES = [...CITY_GAZETTEER, ...CHINA_CITY_SEEDS];
+const COUNTRY_NAMES = {
+  cn: ["中国", "China"],
+  us: ["美国", "United States"],
+  in: ["印度", "India"],
+  jp: ["日本", "Japan"],
+  de: ["德国", "Germany"],
+  gb: ["英国", "United Kingdom"],
+  fr: ["法国", "France"],
+  it: ["意大利", "Italy"],
+  ca: ["加拿大", "Canada"],
+  br: ["巴西", "Brazil"],
+  ru: ["俄罗斯", "Russia"],
+  au: ["澳大利亚", "Australia"],
+  mx: ["墨西哥", "Mexico"],
+  sa: ["沙特阿拉伯", "Saudi Arabia"],
+  ae: ["阿联酋", "United Arab Emirates"],
+  ir: ["伊朗", "Iran"],
+  iq: ["伊拉克", "Iraq"],
+  pk: ["巴基斯坦", "Pakistan"],
+};
+
+function topCityRowsForCountry(countryCode) {
+  const [country_zh, country_en] = COUNTRY_NAMES[countryCode] || [countryCode, countryCode];
+  return (COUNTRY_TOP_CITY_SEEDS[countryCode] || []).map(
+    ([site_id, name_zh, name_en, latitude, longitude, label], index) => ({
+      site_id,
+      name_zh,
+      name_en,
+      aliases: [name_en],
+      country_zh,
+      country_en,
+      country_code: countryCode,
+      latitude,
+      longitude,
+      source: "built-in",
+      confidence_label: label,
+      country_top_city: true,
+      sort_rank: index,
+    }),
+  );
+}
+
+const COUNTRY_TOP_CITIES = Object.keys(COUNTRY_TOP_CITY_SEEDS).flatMap(topCityRowsForCountry);
+const BUILT_IN_CITIES = [...CITY_GAZETTEER, ...COUNTRY_TOP_CITIES];
 
 const HOT_CITIES = CITY_GAZETTEER
   .filter((city) => city.hot_city)
   .map((city) => [city.site_id, city.name_zh, city.latitude, city.longitude, city.country_zh]);
 
 const COUNTRY_QUERY_ALIASES = {
+  "澳大利亚": "Australia",
+  australia: "Australia",
+  "巴基斯坦": "Pakistan",
+  pakistan: "Pakistan",
+  "巴西": "Brazil",
+  brazil: "Brazil",
+  "加拿大": "Canada",
+  canada: "Canada",
+  "德国": "Germany",
+  germany: "Germany",
+  deutschland: "Germany",
+  "法国": "France",
+  france: "France",
+  "俄罗斯": "Russia",
+  russia: "Russia",
+  "印度": "India",
+  india: "India",
+  bharat: "India",
+  "伊拉克": "Iraq",
+  iraq: "Iraq",
+  "伊朗": "Iran",
+  iran: "Iran",
+  "意大利": "Italy",
+  italy: "Italy",
+  "日本": "Japan",
+  japan: "Japan",
+  "墨西哥": "Mexico",
+  mexico: "Mexico",
+  "美国": "United States",
+  usa: "United States",
+  us: "United States",
+  "u.s.": "United States",
+  "u.s.a.": "United States",
+  "united states": "United States",
+  "united states of america": "United States",
+  "英国": "United Kingdom",
+  uk: "United Kingdom",
+  "u.k.": "United Kingdom",
+  britain: "United Kingdom",
+  "great britain": "United Kingdom",
+  "united kingdom": "United Kingdom",
+  "沙特": "Saudi Arabia",
+  "沙特阿拉伯": "Saudi Arabia",
+  "saudi": "Saudi Arabia",
+  "saudi arabia": "Saudi Arabia",
   uae: "United Arab Emirates",
   "united arab emirates": "United Arab Emirates",
   "阿联酋": "United Arab Emirates",
   "阿拉伯联合酋长国": "United Arab Emirates",
   "阿拉伯聯合酋長國": "United Arab Emirates",
-  "沙特": "Saudi Arabia",
-  "沙特阿拉伯": "Saudi Arabia",
   "科威特": "Kuwait",
-  "伊朗": "Iran",
-  "伊拉克": "Iraq",
-  "巴基斯坦": "Pakistan",
+  kuwait: "Kuwait",
   "苏丹": "Sudan",
+  sudan: "Sudan",
   "中国": "China",
   "中华人民共和国": "China",
   china: "China",
@@ -324,6 +568,17 @@ function countrySearchText(value) {
   return COUNTRY_QUERY_ALIASES[normalized] || value.trim();
 }
 
+function countryCodeForQuery(countryName) {
+  const canonical = normalizeSearchText(countrySearchText(countryName));
+  if (COUNTRY_NAMES[canonical]) return canonical;
+  for (const [countryCode, names] of Object.entries(COUNTRY_NAMES)) {
+    if (names.some((name) => normalizeSearchText(name) === canonical)) {
+      return countryCode;
+    }
+  }
+  return "";
+}
+
 function isMostlyAscii(value) {
   return /^[\x00-\x7F\s,.'-]+$/.test(value);
 }
@@ -332,7 +587,7 @@ function builtInSearch(query, countryHint) {
   const normalizedQuery = normalizeSearchText(query);
   const normalizedCountry = normalizeSearchText(countryHint);
   if (!normalizedQuery) return [];
-  return BUILT_IN_CITIES.filter((city) => {
+  const matches = BUILT_IN_CITIES.filter((city) => {
     const names = [city.name_zh, ...city.aliases];
     if (!isMostlyAscii(query)) {
       names.push(city.name_en);
@@ -358,21 +613,15 @@ function builtInSearch(query, countryHint) {
     category: "place",
     type: "city",
     site_id: city.site_id,
-    confidence_label: "内置城市",
+    confidence_label: city.confidence_label || "内置城市",
   }));
+  return dedupeCandidates(matches);
 }
 
 function builtInCountryCities(countryName) {
-  const normalized = normalizeSearchText(countryName);
-  const canonical = normalizeSearchText(countrySearchText(countryName));
-  return BUILT_IN_CITIES.filter((city) => {
-    const nameMatch = [city.country_zh, countrySearchText(city.country_zh)].some((value) => {
-      const item = normalizeSearchText(value);
-      return item === normalized || item === canonical || item.includes(normalized) || normalized.includes(item);
-    });
-    const codeMatch = normalizeSearchText(city.country_code) === normalized;
-    return nameMatch || codeMatch;
-  }).map((city) => ({
+  const countryCode = countryCodeForQuery(countryName);
+  if (!countryCode) return [];
+  return COUNTRY_TOP_CITIES.filter((city) => city.country_code === countryCode).map((city) => ({
     source: "built-in",
     display_name: `${city.name_zh} / ${city.name_en}, ${city.country_zh}`,
     name: city.name_zh,
@@ -386,6 +635,7 @@ function builtInCountryCities(countryName) {
     confidence_label: city.confidence_label || "内置城市",
     population: "",
     sort_population: 0,
+    sort_rank: city.sort_rank,
   }));
 }
 
@@ -568,33 +818,6 @@ function buildNominatimUrl(query, countryHint) {
   return `${NOMINATIM_ENDPOINT}?${params.toString()}`;
 }
 
-function buildCountryNominatimUrl(countryName) {
-  const params = new URLSearchParams({
-    format: "jsonv2",
-    q: countrySearchText(countryName),
-    limit: "5",
-    "accept-language": "zh-CN,en",
-    addressdetails: "1",
-  });
-  return `${NOMINATIM_ENDPOINT}?${params.toString()}`;
-}
-
-function buildOverpassCountryCitiesQuery(areaId) {
-  return `
-[out:json][timeout:30];
-area(${areaId})->.searchArea;
-(
-  node["place"~"^(city|town)$"]["name"](area.searchArea);
-  way["place"~"^(city|town)$"]["name"](area.searchArea);
-  relation["place"~"^(city|town)$"]["name"](area.searchArea);
-  node["capital"]["name"](area.searchArea);
-  way["capital"]["name"](area.searchArea);
-  relation["capital"]["name"](area.searchArea);
-);
-out center tags ${COUNTRY_CITY_LIMIT * 6};
-`.trim();
-}
-
 async function waitForGeocodeRateLimit() {
   const now = Date.now();
   const remaining = GEOCODE_MIN_INTERVAL_MS - (now - lastGeocodeRequestAt);
@@ -610,20 +833,6 @@ function rankGeocodeCandidate(candidate) {
   const typeScore = placeTypes.includes(candidate.type) ? 0 : candidate.type === "administrative" ? 7 : 3;
   const sourceScore = candidate.source === "built-in" ? -5 : 0;
   return sourceScore + categoryScore + typeScore - Number(candidate.importance || 0);
-}
-
-function parsePopulation(value) {
-  if (!value) return 0;
-  const numeric = Number(String(value).replace(/[^\d.]/g, ""));
-  return Number.isFinite(numeric) ? numeric : 0;
-}
-
-function rankCountryCity(candidate) {
-  const populationScore = candidate.sort_population || 0;
-  const builtInBonus = candidate.source === "built-in" ? 1_000_000 : 0;
-  const capitalBonus = candidate.capital ? 600_000 : 0;
-  const cityBonus = candidate.type === "city" ? 100_000 : 0;
-  return builtInBonus + capitalBonus + cityBonus + populationScore;
 }
 
 function normalizeNominatimResult(result) {
@@ -665,23 +874,15 @@ function setCountryCityStatus(message, error = false) {
   elements.countryCityStatus.classList.toggle("error", error);
 }
 
-function isDirectFileMode() {
-  return window.location.protocol === "file:";
-}
-
 function countryCityFailureMessage(error) {
   const message = error?.message || String(error);
-  if (isDirectFileMode() && /failed|load|fetch|network/i.test(message)) {
-    return "国家城市列表查询失败：当前是直接打开本地文件 file://，浏览器会拦截 OpenStreetMap Overpass 的跨域请求。请在 web 文件夹上一级目录运行 python3 -m http.server 8000，然后访问 http://127.0.0.1:8000/web/。城市名单点查询和手工经纬度输入仍可继续使用。";
-  }
-  return `国家城市列表查询失败：${message}。仍可手工填写城市或经纬度。`;
+  return `国家城市候选读取失败：${message}。仍可使用城市名单点查询或手工填写经纬度。`;
 }
 
 function candidateMeta(candidate) {
   const sourceLabel = {
     "built-in": "内置城市表",
     nominatim: "OpenStreetMap Nominatim",
-    overpass: "OpenStreetMap Overpass",
   }[candidate.source] || candidate.source;
   const pieces = [
     sourceLabel,
@@ -800,99 +1001,6 @@ async function queryNominatim(db, query, countryHint) {
   return { results, cacheHit: false };
 }
 
-async function resolveCountryBoundary(countryName) {
-  await waitForGeocodeRateLimit();
-  const url = buildCountryNominatimUrl(countryName);
-  const response = await fetch(url, {
-    headers: { Accept: "application/json" },
-  });
-  if (!response.ok) {
-    throw new Error(`国家边界查询失败：HTTP ${response.status}`);
-  }
-  const payload = await response.json();
-  const relation = payload.find((item) =>
-    item.osm_type === "relation" &&
-    item.category === "boundary" &&
-    item.type === "administrative" &&
-    (item.addresstype === "country" || item.address?.country),
-  ) || payload.find((item) => item.osm_type === "relation" && item.category === "boundary");
-  if (!relation) {
-    throw new Error("未找到可用于国家城市列表的 OSM 国家边界。");
-  }
-  return {
-    osm_id: Number(relation.osm_id),
-    area_id: 3600000000 + Number(relation.osm_id),
-    display_name: relation.display_name,
-    country: relation.address?.country || relation.name || countryName,
-    country_code: relation.address?.country_code || "",
-    url,
-  };
-}
-
-function normalizeOverpassCity(element, boundary) {
-  const tags = element.tags || {};
-  const latitude = element.lat ?? element.center?.lat;
-  const longitude = element.lon ?? element.center?.lon;
-  const name = tags["name:zh"] || tags["name:en"] || tags.int_name || tags.name || "";
-  const population = tags.population || "";
-  const capital = tags.capital || "";
-  const type = tags.place || (tags.boundary === "administrative" ? `admin_level_${tags.admin_level || ""}` : "");
-  const label = capital
-    ? "行政中心候选"
-    : population
-      ? "大城市候选"
-      : type === "town"
-        ? "城镇候选"
-        : "城市候选";
-  const readableId = normalizeSiteId(tags["name:en"] || name, "");
-  const stableFallback = `${type || "city"}_${element.id || "site"}`;
-  return {
-    source: "overpass",
-    display_name: `${name}, ${boundary.country}`,
-    name,
-    country: boundary.country,
-    country_code: boundary.country_code,
-    latitude: Number(latitude),
-    longitude: Number(longitude),
-    category: tags.boundary === "administrative" ? "boundary" : "place",
-    type,
-    capital,
-    population,
-    sort_population: parsePopulation(population),
-    site_id: readableId && readableId.length > 2 ? readableId : stableFallback,
-    confidence_label: label,
-  };
-}
-
-async function fetchOverpassCitiesFromEndpoint(endpoint, query) {
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-    body: new URLSearchParams({ data: query }),
-  });
-  if (!response.ok) {
-    throw new Error(`${endpoint} HTTP ${response.status}`);
-  }
-  return response.json();
-}
-
-async function queryOverpassCountryCities(boundary) {
-  const query = buildOverpassCountryCitiesQuery(boundary.area_id);
-  const errors = [];
-  for (const endpoint of OVERPASS_ENDPOINTS) {
-    try {
-      const payload = await fetchOverpassCitiesFromEndpoint(endpoint, query);
-      if (payload.remark && !(payload.elements || []).length) {
-        throw new Error(`${endpoint} ${payload.remark}`);
-      }
-      return (payload.elements || []).map((element) => normalizeOverpassCity(element, boundary));
-    } catch (error) {
-      errors.push(error.message || String(error));
-    }
-  }
-  throw new Error(`Overpass 城市列表查询失败：${errors.join("；")}`);
-}
-
 function dedupeCandidates(candidates) {
   const seen = new Set();
   const output = [];
@@ -911,58 +1019,40 @@ function dedupeCandidates(candidates) {
 }
 
 async function queryCountryCities(db, countryName) {
-  const key = `country-cities|${normalizeSearchText(countryName)}`;
+  const countryCode = countryCodeForQuery(countryName);
+  const key = `country-top-cities|${countryCode || normalizeSearchText(countryName)}`;
   const cached = await dbGet(db, "countryCities", key);
   if (cached?.results) {
-    return { results: cached.results, cacheHit: true, boundary: cached.boundary };
-  }
-
-  const boundary = await resolveCountryBoundary(countryName);
-  const builtIn = builtInCountryCities(countryName);
-  if (builtIn.length >= 20) {
-    const results = dedupeCandidates(builtIn)
-      .sort((a, b) => rankCountryCity(b) - rankCountryCity(a))
-      .slice(0, COUNTRY_CITY_LIMIT);
-    await dbPut(db, "countryCities", {
-      key,
-      countryName,
-      boundary,
-      results,
-      saved_at: new Date().toISOString(),
-      source: "built-in",
-      overpassError: "内置城市候选已覆盖主要城市，未实时扫描 OSM。",
-    });
     return {
-      results,
-      cacheHit: false,
-      boundary,
-      overpassError: "内置城市候选已覆盖主要城市，未实时扫描 OSM。",
-      builtInOnly: true,
+      results: cached.results,
+      cacheHit: true,
+      countryCode: cached.countryCode || countryCode,
+      countryLabel: cached.countryLabel || countryName,
+      missingBuiltIn: cached.missingBuiltIn || false,
     };
   }
-  let overpass = [];
-  let overpassError = "";
-  try {
-    overpass = await queryOverpassCountryCities(boundary);
-  } catch (error) {
-    overpassError = error.message || String(error);
-  }
-  const results = dedupeCandidates([...builtIn, ...overpass])
-    .sort((a, b) => rankCountryCity(b) - rankCountryCity(a))
+
+  const countryLabel = countryCode ? COUNTRY_NAMES[countryCode][0] : countryName;
+  const results = dedupeCandidates(builtInCountryCities(countryName))
+    .sort((a, b) => (a.sort_rank ?? 999) - (b.sort_rank ?? 999))
     .slice(0, COUNTRY_CITY_LIMIT);
-  if (!results.length && overpassError) {
-    throw new Error(overpassError);
-  }
   await dbPut(db, "countryCities", {
     key,
     countryName,
-    boundary,
+    countryCode,
+    countryLabel,
     results,
     saved_at: new Date().toISOString(),
-    source: "overpass",
-    overpassError,
+    source: "built-in-country-top-cities",
+    missingBuiltIn: !countryCode || !results.length,
   });
-  return { results, cacheHit: false, boundary, overpassError };
+  return {
+    results,
+    cacheHit: false,
+    countryCode,
+    countryLabel,
+    missingBuiltIn: !countryCode || !results.length,
+  };
 }
 
 async function runCountryCitySearch() {
@@ -975,22 +1065,20 @@ async function runCountryCitySearch() {
 
   elements.countryCityButton.disabled = true;
   elements.countryCityResults.innerHTML = "";
-  setCountryCityStatus(
-    isDirectFileMode()
-      ? "正在查询国家城市列表；直接打开本地文件时，Overpass 可能被浏览器跨域策略拦截。"
-      : "正在查询国家城市列表...",
-  );
+  setCountryCityStatus("正在读取内置国家城市候选...");
   try {
     const db = await openDatabase();
-    const { results, cacheHit, boundary, overpassError, builtInOnly } = await queryCountryCities(db, countryName);
+    const { results, cacheHit, countryLabel, missingBuiltIn } = await queryCountryCities(db, countryName);
     renderCountryCityCandidates(results);
+    if (missingBuiltIn) {
+      setCountryCityStatus(
+        `当前未内置“${countryName}”的 Top10 经济城市候选；请使用“按城市名添加点位”逐个查询，或手工输入经纬度。`,
+      );
+      return;
+    }
     const sourceText = cacheHit
       ? "来自本地国家城市缓存。"
-      : builtInOnly
-        ? "来自内置城市表；该国家范围较大，未实时扫描 OSM。"
-      : overpassError
-        ? `Overpass 暂时不可用，先显示 ${boundary.country || countryName} 的内置候选。`
-        : `来自 ${boundary.country || countryName} 的 OSM 城市/行政中心候选。`;
+      : `来自 ${countryLabel || countryName} 预置表；这是工具内置实用候选，不是官方 GDP 精确排名。`;
     setCountryCityStatus(`找到 ${results.length} 个候选，${sourceText}`);
   } catch (error) {
     setCountryCityStatus(countryCityFailureMessage(error), true);
@@ -1569,9 +1657,6 @@ async function updateCacheStatus() {
   try {
     await openDatabase();
     elements.cacheStatus.textContent = "缓存：IndexedDB 可用";
-    if (isDirectFileMode()) {
-      setCountryCityStatus("当前是直接打开本地文件；国家城市列表依赖 Overpass，若查询失败请用 python3 -m http.server 8000 启动本地静态服务。");
-    }
   } catch (error) {
     elements.cacheStatus.textContent = "缓存：不可用";
     setWarning(`浏览器 IndexedDB 不可用：${error.message || error}`, true);
