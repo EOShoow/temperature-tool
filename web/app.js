@@ -7,7 +7,8 @@ const OPEN_METEO_ARCHIVE_ENDPOINT = "https://archive-api.open-meteo.com/v1/archi
 const PARAMETER = "T2M";
 const COMMUNITY = "AG";
 const GEOCODE_MIN_INTERVAL_MS = 1000;
-const COUNTRY_CITY_LIMIT = 10;
+const COUNTRY_CITY_LIMIT = 11;
+const COUNTRY_CITY_CACHE_VERSION = "v2";
 const DUAL_SOURCE_WINDOW_DAYS = 7;
 const DUAL_SOURCE_WINDOW_BATCH_SIZE = 20;
 const DUAL_SOURCE_WINDOWS = [
@@ -149,6 +150,7 @@ const COUNTRY_TOP_CITY_SEEDS = {
     ["hangzhou", "杭州", "Hangzhou", 30.2741, 120.1551, "省会/经济城市候选"],
     ["wuhan", "武汉", "Wuhan", 30.5928, 114.3055, "省会/经济城市候选"],
     ["nanjing", "南京", "Nanjing", 32.0603, 118.7969, "省会/经济城市候选"],
+    ["luan", "六安", "Lu'an", 31.7349, 116.5232, "地级市/经济城市候选"],
   ],
   us: [
     ["new_york", "纽约", "New York", 40.7128, -74.006, "经济城市候选"],
@@ -1079,7 +1081,7 @@ function dedupeCandidates(candidates) {
 
 async function queryCountryCities(db, countryName) {
   const countryCode = countryCodeForQuery(countryName);
-  const key = `country-top-cities|${countryCode || normalizeSearchText(countryName)}`;
+  const key = `country-top-cities|${COUNTRY_CITY_CACHE_VERSION}|${countryCode || normalizeSearchText(countryName)}`;
   const cached = await dbGet(db, "countryCities", key);
   if (cached?.results) {
     return {
@@ -1131,7 +1133,7 @@ async function runCountryCitySearch() {
     renderCountryCityCandidates(results);
     if (missingBuiltIn) {
       setCountryCityStatus(
-        `当前未内置“${countryName}”的 Top10 经济城市候选；请使用“按城市名添加点位”逐个查询，或手工输入经纬度。`,
+        `当前未内置“${countryName}”的主要经济城市候选；请使用“按城市名添加点位”逐个查询，或手工输入经纬度。`,
       );
       return;
     }
