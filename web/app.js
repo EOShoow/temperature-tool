@@ -10,7 +10,7 @@ const OVERPASS_ENDPOINTS = [
 const PARAMETER = "T2M";
 const COMMUNITY = "AG";
 const GEOCODE_MIN_INTERVAL_MS = 1000;
-const COUNTRY_CITY_LIMIT = 30;
+const COUNTRY_CITY_LIMIT = 60;
 const DEFAULT_SAMPLE = [
   "site_id,name,latitude,longitude,country",
   "kuwait_city,科威特市,29.3759,47.9774,科威特",
@@ -127,6 +127,64 @@ const CITY_GAZETTEER = [
   },
 ];
 
+const CHINA_CITY_SEEDS = [
+  ["beijing", "北京", "Beijing", 39.9042, 116.4074, "直辖市"],
+  ["shanghai", "上海", "Shanghai", 31.2304, 121.4737, "直辖市"],
+  ["tianjin", "天津", "Tianjin", 39.3434, 117.3616, "直辖市"],
+  ["chongqing", "重庆", "Chongqing", 29.563, 106.5516, "直辖市"],
+  ["guangzhou", "广州", "Guangzhou", 23.1291, 113.2644, "省会/大城市"],
+  ["shenzhen", "深圳", "Shenzhen", 22.5431, 114.0579, "大城市"],
+  ["chengdu", "成都", "Chengdu", 30.5728, 104.0668, "省会/大城市"],
+  ["wuhan", "武汉", "Wuhan", 30.5928, 114.3055, "省会/大城市"],
+  ["xian", "西安", "Xi'an", 34.3416, 108.9398, "省会/大城市"],
+  ["nanjing", "南京", "Nanjing", 32.0603, 118.7969, "省会/大城市"],
+  ["hangzhou", "杭州", "Hangzhou", 30.2741, 120.1551, "省会/大城市"],
+  ["suzhou", "苏州", "Suzhou", 31.2989, 120.5853, "大城市"],
+  ["zhengzhou", "郑州", "Zhengzhou", 34.7466, 113.6254, "省会/大城市"],
+  ["changsha", "长沙", "Changsha", 28.2282, 112.9388, "省会/大城市"],
+  ["shenyang", "沈阳", "Shenyang", 41.8057, 123.4315, "省会/大城市"],
+  ["dalian", "大连", "Dalian", 38.914, 121.6147, "大城市"],
+  ["harbin", "哈尔滨", "Harbin", 45.8038, 126.5349, "省会"],
+  ["changchun", "长春", "Changchun", 43.8171, 125.3235, "省会"],
+  ["jinan", "济南", "Jinan", 36.6512, 117.1201, "省会"],
+  ["qingdao", "青岛", "Qingdao", 36.0671, 120.3826, "大城市"],
+  ["fuzhou", "福州", "Fuzhou", 26.0745, 119.2965, "省会"],
+  ["xiamen", "厦门", "Xiamen", 24.4798, 118.0894, "大城市"],
+  ["hefei", "合肥", "Hefei", 31.8206, 117.2272, "省会"],
+  ["nanchang", "南昌", "Nanchang", 28.682, 115.8582, "省会"],
+  ["kunming", "昆明", "Kunming", 25.0389, 102.7183, "省会"],
+  ["guiyang", "贵阳", "Guiyang", 26.647, 106.6302, "省会"],
+  ["nanning", "南宁", "Nanning", 22.817, 108.3669, "自治区首府"],
+  ["haikou", "海口", "Haikou", 20.0444, 110.1999, "省会"],
+  ["taiyuan", "太原", "Taiyuan", 37.8706, 112.5489, "省会"],
+  ["shijiazhuang", "石家庄", "Shijiazhuang", 38.0428, 114.5149, "省会"],
+  ["hohhot", "呼和浩特", "Hohhot", 40.8426, 111.7492, "自治区首府"],
+  ["lanzhou", "兰州", "Lanzhou", 36.0611, 103.8343, "省会"],
+  ["xining", "西宁", "Xining", 36.6171, 101.7782, "省会"],
+  ["yinchuan", "银川", "Yinchuan", 38.4872, 106.2309, "自治区首府"],
+  ["urumqi", "乌鲁木齐", "Urumqi", 43.8256, 87.6168, "自治区首府"],
+  ["lhasa", "拉萨", "Lhasa", 29.652, 91.1721, "自治区首府"],
+  ["ningbo", "宁波", "Ningbo", 29.8683, 121.544, "大城市"],
+  ["dongguan", "东莞", "Dongguan", 23.0207, 113.7518, "大城市"],
+  ["foshan", "佛山", "Foshan", 23.0215, 113.1214, "大城市"],
+  ["wuxi", "无锡", "Wuxi", 31.4912, 120.3119, "大城市"],
+  ["hong_kong", "香港", "Hong Kong", 22.3193, 114.1694, "特别行政区"],
+  ["macau", "澳门", "Macau", 22.1987, 113.5439, "特别行政区"],
+].map(([site_id, name_zh, name_en, latitude, longitude, label]) => ({
+  site_id,
+  name_zh,
+  name_en,
+  aliases: [name_en],
+  country_zh: "中国",
+  country_code: "cn",
+  latitude,
+  longitude,
+  source: "built-in",
+  confidence_label: label,
+}));
+
+const BUILT_IN_CITIES = [...CITY_GAZETTEER, ...CHINA_CITY_SEEDS];
+
 const HOT_CITIES = CITY_GAZETTEER
   .filter((city) => city.hot_city)
   .map((city) => [city.site_id, city.name_zh, city.latitude, city.longitude, city.country_zh]);
@@ -144,6 +202,10 @@ const COUNTRY_QUERY_ALIASES = {
   "伊拉克": "Iraq",
   "巴基斯坦": "Pakistan",
   "苏丹": "Sudan",
+  "中国": "China",
+  "中华人民共和国": "China",
+  china: "China",
+  prc: "China",
 };
 
 const elements = {
@@ -270,7 +332,7 @@ function builtInSearch(query, countryHint) {
   const normalizedQuery = normalizeSearchText(query);
   const normalizedCountry = normalizeSearchText(countryHint);
   if (!normalizedQuery) return [];
-  return CITY_GAZETTEER.filter((city) => {
+  return BUILT_IN_CITIES.filter((city) => {
     const names = [city.name_zh, ...city.aliases];
     if (!isMostlyAscii(query)) {
       names.push(city.name_en);
@@ -303,7 +365,7 @@ function builtInSearch(query, countryHint) {
 function builtInCountryCities(countryName) {
   const normalized = normalizeSearchText(countryName);
   const canonical = normalizeSearchText(countrySearchText(countryName));
-  return CITY_GAZETTEER.filter((city) => {
+  return BUILT_IN_CITIES.filter((city) => {
     const nameMatch = [city.country_zh, countrySearchText(city.country_zh)].some((value) => {
       const item = normalizeSearchText(value);
       return item === normalized || item === canonical || item.includes(normalized) || normalized.includes(item);
@@ -321,7 +383,7 @@ function builtInCountryCities(countryName) {
     category: "place",
     type: "city",
     site_id: city.site_id,
-    confidence_label: "内置城市",
+    confidence_label: city.confidence_label || "内置城市",
     population: "",
     sort_population: 0,
   }));
@@ -820,6 +882,9 @@ async function queryOverpassCountryCities(boundary) {
   for (const endpoint of OVERPASS_ENDPOINTS) {
     try {
       const payload = await fetchOverpassCitiesFromEndpoint(endpoint, query);
+      if (payload.remark && !(payload.elements || []).length) {
+        throw new Error(`${endpoint} ${payload.remark}`);
+      }
       return (payload.elements || []).map((element) => normalizeOverpassCity(element, boundary));
     } catch (error) {
       errors.push(error.message || String(error));
@@ -854,6 +919,27 @@ async function queryCountryCities(db, countryName) {
 
   const boundary = await resolveCountryBoundary(countryName);
   const builtIn = builtInCountryCities(countryName);
+  if (builtIn.length >= 20) {
+    const results = dedupeCandidates(builtIn)
+      .sort((a, b) => rankCountryCity(b) - rankCountryCity(a))
+      .slice(0, COUNTRY_CITY_LIMIT);
+    await dbPut(db, "countryCities", {
+      key,
+      countryName,
+      boundary,
+      results,
+      saved_at: new Date().toISOString(),
+      source: "built-in",
+      overpassError: "内置城市候选已覆盖主要城市，未实时扫描 OSM。",
+    });
+    return {
+      results,
+      cacheHit: false,
+      boundary,
+      overpassError: "内置城市候选已覆盖主要城市，未实时扫描 OSM。",
+      builtInOnly: true,
+    };
+  }
   let overpass = [];
   let overpassError = "";
   try {
@@ -896,10 +982,12 @@ async function runCountryCitySearch() {
   );
   try {
     const db = await openDatabase();
-    const { results, cacheHit, boundary, overpassError } = await queryCountryCities(db, countryName);
+    const { results, cacheHit, boundary, overpassError, builtInOnly } = await queryCountryCities(db, countryName);
     renderCountryCityCandidates(results);
     const sourceText = cacheHit
       ? "来自本地国家城市缓存。"
+      : builtInOnly
+        ? "来自内置城市表；该国家范围较大，未实时扫描 OSM。"
       : overpassError
         ? `Overpass 暂时不可用，先显示 ${boundary.country || countryName} 的内置候选。`
         : `来自 ${boundary.country || countryName} 的 OSM 城市/行政中心候选。`;
