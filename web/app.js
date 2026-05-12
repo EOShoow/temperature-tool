@@ -3,7 +3,10 @@
 const TOOL_VERSION = "0.3.0";
 const NASA_ENDPOINT = "https://power.larc.nasa.gov/api/temporal/hourly/point";
 const NOMINATIM_ENDPOINT = "https://nominatim.openstreetmap.org/search";
-const OVERPASS_ENDPOINT = "https://overpass-api.de/api/interpreter";
+const OVERPASS_ENDPOINTS = [
+  "https://overpass-api.de/api/interpreter",
+  "https://overpass.kumi.systems/api/interpreter",
+];
 const PARAMETER = "T2M";
 const COMMUNITY = "AG";
 const GEOCODE_MIN_INTERVAL_MS = 1000;
@@ -525,7 +528,6 @@ area(${areaId})->.searchArea;
   node["capital"]["name"](area.searchArea);
   way["capital"]["name"](area.searchArea);
   relation["capital"]["name"](area.searchArea);
-  relation["boundary"="administrative"]["name"]["admin_level"~"^(4|5|6|7|8)$"](area.searchArea);
 );
 out center tags ${COUNTRY_CITY_LIMIT * 6};
 `.trim();
@@ -599,6 +601,18 @@ function setGeocodeStatus(message, error = false) {
 function setCountryCityStatus(message, error = false) {
   elements.countryCityStatus.textContent = message;
   elements.countryCityStatus.classList.toggle("error", error);
+}
+
+function isDirectFileMode() {
+  return window.location.protocol === "file:";
+}
+
+function countryCityFailureMessage(error) {
+  const message = error?.message || String(error);
+  if (isDirectFileMode() && /failed|load|fetch|network/i.test(message)) {
+    return "国家城市列表查询失败：当前是直接打开本地文件 file://，浏览器会拦截 OpenStreetMap Overpass 的跨域请求。请在 web 文件夹上一级目录运行 python3 -m http.server 8000，然后访问 http://127.0.0.1:8000/web/。城市名单点查询和手工经纬度输入仍可继续使用。";
+  }
+  return `国家城市列表查询失败：${message}。仍可手工填写城市或经纬度。`;
 }
 
 function candidateMeta(candidate) {
@@ -788,18 +802,30 @@ function normalizeOverpassCity(element, boundary) {
   };
 }
 
-async function queryOverpassCountryCities(boundary) {
-  const query = buildOverpassCountryCitiesQuery(boundary.area_id);
-  const response = await fetch(OVERPASS_ENDPOINT, {
+async function fetchOverpassCitiesFromEndpoint(endpoint, query) {
+  const response = await fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
     body: new URLSearchParams({ data: query }),
   });
   if (!response.ok) {
-    throw new Error(`Overpass 城市列表查询失败：HTTP ${response.status}`);
+    throw new Error(`${endpoint} HTTP ${response.status}`);
   }
-  const payload = await response.json();
-  return (payload.elements || []).map((element) => normalizeOverpassCity(element, boundary));
+  return response.json();
+}
+
+async function queryOverpassCountryCities(boundary) {
+  const query = buildOverpassCountryCitiesQuery(boundary.area_id);
+  const errors = [];
+  for (const endpoint of OVERPASS_ENDPOINTS) {
+    try {
+      const payload = await fetchOverpassCitiesFromEndpoint(endpoint, query);
+      return (payload.elements || []).map((element) => normalizeOverpassCity(element, boundary));
+    } catch (error) {
+      errors.push(error.message || String(error));
+    }
+  }
+  throw new Error(`Overpass 城市列表查询失败：${errors.join("；")}`);
 }
 
 function dedupeCandidates(candidates) {
@@ -828,10 +854,19 @@ async function queryCountryCities(db, countryName) {
 
   const boundary = await resolveCountryBoundary(countryName);
   const builtIn = builtInCountryCities(countryName);
-  const overpass = await queryOverpassCountryCities(boundary);
+  let overpass = [];
+  let overpassError = "";
+  try {
+    overpass = await queryOverpassCountryCities(boundary);
+  } catch (error) {
+    overpassError = error.message || String(error);
+  }
   const results = dedupeCandidates([...builtIn, ...overpass])
     .sort((a, b) => rankCountryCity(b) - rankCountryCity(a))
     .slice(0, COUNTRY_CITY_LIMIT);
+  if (!results.length && overpassError) {
+    throw new Error(overpassError);
+  }
   await dbPut(db, "countryCities", {
     key,
     countryName,
@@ -839,8 +874,9 @@ async function queryCountryCities(db, countryName) {
     results,
     saved_at: new Date().toISOString(),
     source: "overpass",
+    overpassError,
   });
-  return { results, cacheHit: false, boundary };
+  return { results, cacheHit: false, boundary, overpassError };
 }
 
 async function runCountryCitySearch() {
@@ -853,15 +889,23 @@ async function runCountryCitySearch() {
 
   elements.countryCityButton.disabled = true;
   elements.countryCityResults.innerHTML = "";
-  setCountryCityStatus("正在查询国家城市列表...");
+  setCountryCityStatus(
+    isDirectFileMode()
+      ? "正在查询国家城市列表；直接打开本地文件时，Overpass 可能被浏览器跨域策略拦截。"
+      : "正在查询国家城市列表...",
+  );
   try {
     const db = await openDatabase();
-    const { results, cacheHit, boundary } = await queryCountryCities(db, countryName);
+    const { results, cacheHit, boundary, overpassError } = await queryCountryCities(db, countryName);
     renderCountryCityCandidates(results);
-    const sourceText = cacheHit ? "来自本地国家城市缓存。" : `来自 ${boundary.country || countryName} 的 OSM 城市/行政中心候选。`;
+    const sourceText = cacheHit
+      ? "来自本地国家城市缓存。"
+      : overpassError
+        ? `Overpass 暂时不可用，先显示 ${boundary.country || countryName} 的内置候选。`
+        : `来自 ${boundary.country || countryName} 的 OSM 城市/行政中心候选。`;
     setCountryCityStatus(`找到 ${results.length} 个候选，${sourceText}`);
   } catch (error) {
-    setCountryCityStatus(`国家城市列表查询失败：${error.message || error}。仍可手工填写城市或经纬度。`, true);
+    setCountryCityStatus(countryCityFailureMessage(error), true);
   } finally {
     elements.countryCityButton.disabled = false;
   }
@@ -1437,6 +1481,9 @@ async function updateCacheStatus() {
   try {
     await openDatabase();
     elements.cacheStatus.textContent = "缓存：IndexedDB 可用";
+    if (isDirectFileMode()) {
+      setCountryCityStatus("当前是直接打开本地文件；国家城市列表依赖 Overpass，若查询失败请用 python3 -m http.server 8000 启动本地静态服务。");
+    }
   } catch (error) {
     elements.cacheStatus.textContent = "缓存：不可用";
     setWarning(`浏览器 IndexedDB 不可用：${error.message || error}`, true);

@@ -37,6 +37,8 @@ python3 -m http.server 8000
 
 然后访问 `http://127.0.0.1:8000/web/`。
 
+其中“按国家列出城市”依赖 OpenStreetMap Overpass。部分浏览器直接用 `file://` 打开网页时会拦截 Overpass 跨域请求；遇到 `Load failed` 时，请使用上面的本地静态服务方式打开。
+
 ## 数据口径
 
 - 数据源：NASA POWER Hourly API
