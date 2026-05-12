@@ -2,11 +2,10 @@
 # -*- coding: utf-8 -*-
 """ERA5-Land lightweight sampling check against existing NASA POWER CSV data.
 
-This is a side-path validator. It reads existing NASA POWER long-table CSVs,
-samples a small number of city-hour points, fetches matching ERA5-Land hourly
-2m temperature from Open-Meteo's archive API, and writes comparison summaries.
-It intentionally does not modify any NASA POWER web UI, export scripts, caches,
-or workbooks.
+This is the optional dual-source consistency layer. It reads existing NASA
+POWER long-table CSVs, samples a small number of city-hour points, fetches
+matching ERA5-Land hourly 2m temperature from Open-Meteo's archive API, and
+writes comparison summaries that can be imported by the static web tool.
 """
 
 from __future__ import annotations

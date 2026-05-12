@@ -78,6 +78,21 @@
             </label>
             <span id="inputHint">可直接粘贴，也可以上传 CSV 文件。</span>
           </div>
+
+          <div class="dual-source-box">
+            <div>
+              <h2>双源一致证据</h2>
+              <p>可选上传 ERA5-Land 抽样校验 JSON/CSV，导出 Excel 时会合入摘要和“双源一致校验”sheet。</p>
+            </div>
+            <div class="file-row">
+              <label class="file-label">
+                上传校验结果
+                <input id="dualSourceFile" type="file" accept=".json,.csv,application/json,text/csv" />
+              </label>
+              <button type="button" id="clearDualSource">移除证据</button>
+              <span id="dualSourceStatus">未导入；不影响 NASA 主数据拉取。</span>
+            </div>
+          </div>
         </section>
 
         <aside class="panel settings-panel">
@@ -143,6 +158,7 @@
                 <th>最高</th>
                 <th>超温小时</th>
                 <th>超温占比</th>
+                <th>双源状态</th>
                 <th>缓存命中</th>
                 <th>缓存未命中</th>
               </tr>
@@ -166,6 +182,10 @@
           <div>
             <h3>缓存说明</h3>
             <p>缓存保存在当前浏览器的 IndexedDB 中。换电脑、换浏览器或清空站点数据后，缓存不会自动保留。</p>
+          </div>
+          <div>
+            <h3>双源一致</h3>
+            <p>上传 ERA5-Land 抽样校验结果后，Excel 会记录城市级一致状态；未上传时只代表本次未做双源校验。</p>
           </div>
           <div>
             <h3>本地运行文件</h3>

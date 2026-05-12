@@ -103,6 +103,7 @@ h3 {
 .readme-panel p,
 .note,
 #inputHint,
+#dualSourceStatus,
 .current-task,
 .geocode-status,
 .attribution,
@@ -143,7 +144,8 @@ h3 {
 }
 
 .geocode-box,
-.country-city-box {
+.country-city-box,
+.dual-source-box {
   border-bottom: 1px solid var(--line);
   margin-bottom: 16px;
   padding-bottom: 16px;
@@ -166,7 +168,8 @@ h3 {
   min-height: 22px;
 }
 
-.geocode-status.error {
+.geocode-status.error,
+#dualSourceStatus.error {
   color: var(--error);
 }
 

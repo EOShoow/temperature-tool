@@ -1,6 +1,6 @@
 "use strict";
 
-const TOOL_VERSION = "0.4.0";
+const TOOL_VERSION = "0.5.0";
 const NASA_ENDPOINT = "https://power.larc.nasa.gov/api/temporal/hourly/point";
 const NOMINATIM_ENDPOINT = "https://nominatim.openstreetmap.org/search";
 const PARAMETER = "T2M";
@@ -455,6 +455,9 @@ const COUNTRY_QUERY_ALIASES = {
 const elements = {
   csvInput: document.getElementById("csvInput"),
   fileInput: document.getElementById("fileInput"),
+  dualSourceFile: document.getElementById("dualSourceFile"),
+  dualSourceStatus: document.getElementById("dualSourceStatus"),
+  clearDualSource: document.getElementById("clearDualSource"),
   loadHotCities: document.getElementById("loadHotCities"),
   downloadTemplate: document.getElementById("downloadTemplate"),
   geocodeQuery: document.getElementById("geocodeQuery"),
@@ -484,6 +487,7 @@ const elements = {
 
 let activeResult = null;
 let lastGeocodeRequestAt = 0;
+let dualSourceEvidence = null;
 
 function csvEscape(value) {
   if (value === null || value === undefined) return "";
@@ -543,8 +547,30 @@ function parseCsv(text) {
   return rows;
 }
 
+function indexCsvRows(rows) {
+  if (!rows.length) return [];
+  const headers = rows[0].map(normalizeHeader);
+  return rows.slice(1).map((row) => {
+    const indexed = {};
+    headers.forEach((header, index) => {
+      indexed[header] = row[index] ?? "";
+    });
+    return indexed;
+  });
+}
+
 function normalizeHeader(header) {
   return header.trim().toLowerCase().replace(/\s+/g, "_");
+}
+
+function firstPresent(row, names) {
+  for (const name of names) {
+    const value = row?.[name];
+    if (value !== undefined && value !== null && String(value).trim() !== "") {
+      return value;
+    }
+  }
+  return "";
 }
 
 function normalizeSiteId(value, fallback) {
@@ -874,6 +900,11 @@ function setCountryCityStatus(message, error = false) {
   elements.countryCityStatus.classList.toggle("error", error);
 }
 
+function setDualSourceStatus(message, error = false) {
+  elements.dualSourceStatus.textContent = message;
+  elements.dualSourceStatus.classList.toggle("error", error);
+}
+
 function countryCityFailureMessage(error) {
   const message = error?.message || String(error);
   return `国家城市候选读取失败：${message}。仍可使用城市名单点查询或手工填写经纬度。`;
@@ -1087,6 +1118,102 @@ async function runCountryCitySearch() {
   }
 }
 
+function normalizeDualSourceRow(row) {
+  const siteId = String(firstPresent(row, ["city_id", "site_id", "id"])).trim();
+  const status = String(firstPresent(row, ["status", "dual_source_status", "一致状态"])).trim();
+  if (!siteId || !status) return null;
+  return {
+    site_id: siteId,
+    name: firstPresent(row, ["city_zh", "name", "city_name", "城市"]),
+    country: firstPresent(row, ["country_zh", "country", "国家"]),
+    sample_count: firstPresent(row, ["sample_count", "样本"]),
+    compared_count: firstPresent(row, ["compared_count", "可比较样本"]),
+    missing_count: firstPresent(row, ["missing_count", "缺测"]),
+    nasa_mean_sample_t2m_c: firstPresent(row, ["nasa_mean_sample_t2m_c", "nasa_mean"]),
+    era5_mean_sample_t2m_c: firstPresent(row, ["era5_mean_sample_t2m_c", "era5_mean"]),
+    mean_bias_era5_minus_nasa_c: firstPresent(row, ["mean_bias_era5_minus_nasa_c", "mean_bias"]),
+    p95_abs_point_diff_c: firstPresent(row, ["p95_abs_point_diff_c", "point_p95_abs_diff"]),
+    p95_band_mean_bias_c: firstPresent(row, ["p95_band_mean_bias_c", "p95_bias"]),
+    tail_mean_bias_c: firstPresent(row, ["tail_mean_bias_c", "tail_bias"]),
+    status,
+    reason: firstPresent(row, ["reason", "备注", "说明"]),
+  };
+}
+
+function parseDualSourceEvidence(text, filename) {
+  const trimmed = text.trim();
+  let payload = null;
+  let rows = [];
+  if (!trimmed) {
+    throw new Error("双源校验文件为空。");
+  }
+  if (filename.toLowerCase().endsWith(".json") || trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    payload = JSON.parse(trimmed);
+    const rawRows = Array.isArray(payload) ? payload : payload.city_summaries;
+    if (!Array.isArray(rawRows)) {
+      throw new Error("JSON 中未找到 city_summaries 数组。");
+    }
+    rows = rawRows.map(normalizeDualSourceRow).filter(Boolean);
+  } else {
+    rows = indexCsvRows(parseCsv(trimmed)).map(normalizeDualSourceRow).filter(Boolean);
+    payload = {
+      method: "Imported dual-source consistency CSV",
+      city_summaries: rows,
+    };
+  }
+  if (!rows.length) {
+    throw new Error("未解析到包含 city_id/site_id 与 status 的城市级校验结果。");
+  }
+  const bySiteId = new Map();
+  for (const row of rows) {
+    bySiteId.set(normalizeSearchText(row.site_id), row);
+  }
+  return {
+    source_file: filename,
+    loaded_at: new Date().toISOString(),
+    method: payload.method || "",
+    provider: payload.provider || "",
+    provider_model: payload.provider_model || "",
+    fetch_granularity: payload.fetch_granularity || "",
+    sample_size: payload.sample_size || "",
+    seed: payload.seed || "",
+    thresholds: {
+      mean_threshold_c: payload.mean_threshold_c ?? "",
+      tail_threshold_c: payload.tail_threshold_c ?? "",
+      tail_vote_threshold_c: payload.tail_vote_threshold_c ?? "",
+      point_hard_threshold_c: payload.point_hard_threshold_c ?? "",
+    },
+    rows,
+    bySiteId,
+  };
+}
+
+function dualSourceForSite(siteId) {
+  return dualSourceEvidence?.bySiteId.get(normalizeSearchText(siteId)) || null;
+}
+
+async function loadDualSourceEvidenceFromFile(file) {
+  if (!file) return;
+  try {
+    const text = await file.text();
+    dualSourceEvidence = parseDualSourceEvidence(text, file.name);
+    setDualSourceStatus(`已导入 ${dualSourceEvidence.rows.length} 个城市的双源校验结果：${file.name}`);
+    if (activeResult) {
+      setWarning("双源证据已导入；请重新开始拉取，让新的 Excel 融合该证据。");
+    }
+  } catch (error) {
+    dualSourceEvidence = null;
+    elements.dualSourceFile.value = "";
+    setDualSourceStatus(`双源校验文件解析失败：${error.message || error}`, true);
+  }
+}
+
+function clearDualSourceEvidence() {
+  dualSourceEvidence = null;
+  elements.dualSourceFile.value = "";
+  setDualSourceStatus("未导入；不影响 NASA 主数据拉取。");
+}
+
 async function fetchWithRetry(url, retries = 3) {
   let lastError = null;
   for (let attempt = 1; attempt <= retries; attempt += 1) {
@@ -1155,6 +1282,7 @@ function summarizeSite(site, rows, threshold, cacheHits, cacheMisses, failedYear
     .filter((value) => Number.isFinite(value));
   const exceedCount = values.filter((value) => value >= threshold).length;
   const sum = values.reduce((total, value) => total + value, 0);
+  const dualSource = dualSourceForSite(site.site_id);
   return {
     site_id: site.site_id,
     name: site.name,
@@ -1171,6 +1299,12 @@ function summarizeSite(site, rows, threshold, cacheHits, cacheMisses, failedYear
     exceed_count: exceedCount,
     exceed_ratio: values.length ? (exceedCount / values.length).toFixed(6) : "",
     exceed_ratio_percent: values.length ? `${((exceedCount / values.length) * 100).toFixed(2)}%` : "",
+    dual_source_status: dualSource ? dualSource.status : "未导入",
+    dual_source_reason: dualSource ? dualSource.reason : "",
+    dual_source_sample_count: dualSource ? dualSource.sample_count : "",
+    dual_source_compared_count: dualSource ? dualSource.compared_count : "",
+    dual_source_mean_bias_c: dualSource ? dualSource.mean_bias_era5_minus_nasa_c : "",
+    dual_source_tail_bias_c: dualSource ? dualSource.tail_mean_bias_c : "",
     cache_hits: cacheHits,
     cache_misses: cacheMisses,
     failed_years: failedYears.join(";"),
@@ -1217,6 +1351,8 @@ function setBusy(isBusy) {
   elements.runButton.disabled = isBusy;
   elements.clearCache.disabled = isBusy;
   elements.fileInput.disabled = isBusy;
+  elements.dualSourceFile.disabled = isBusy;
+  elements.clearDualSource.disabled = isBusy;
   elements.geocodeButton.disabled = isBusy;
   elements.countryCityButton.disabled = isBusy;
 }
@@ -1235,6 +1371,7 @@ function renderSummaryTable(rows) {
       row.t2m_c_max,
       row.exceed_count,
       row.exceed_ratio_percent,
+      row.dual_source_status,
       row.cache_hits,
       row.cache_misses,
     ];
@@ -1311,9 +1448,11 @@ function summarySheetAoa(result) {
     ["缓存命中", manifest.cache_hits],
     ["缓存未命中", manifest.cache_misses],
     ["失败请求", manifest.error_count],
+    ["双源一致证据", manifest.dual_source?.status || "未导入"],
+    ["双源证据文件", manifest.dual_source?.source_file || ""],
     ["工具版本", manifest.tool_version],
     ["生成时间", manifest.generated_at],
-    ["说明", "T2M 为 2 米气温小时平均值，单位摄氏度；宽表按 date + hour 对齐全部点位。"],
+    ["说明", "T2M 为 2 米气温小时平均值，单位摄氏度；宽表按 date + hour 对齐全部点位；双源一致为可选抽样证据层。"],
     [],
     [
       "site_id",
@@ -1329,6 +1468,8 @@ function summarySheetAoa(result) {
       "超温阈值",
       "超温小时数",
       "超温占比",
+      "双源状态",
+      "双源备注",
       "缓存命中",
       "缓存未命中",
       "失败年份",
@@ -1347,6 +1488,8 @@ function summarySheetAoa(result) {
       `${row.threshold_c} °C`,
       row.exceed_count,
       row.exceed_ratio_percent,
+      row.dual_source_status,
+      row.dual_source_reason,
       row.cache_hits,
       row.cache_misses,
       row.failed_years,
@@ -1373,7 +1516,15 @@ function manifestRows(manifest) {
     { key: "cache_hits", value: manifest.cache_hits },
     { key: "cache_misses", value: manifest.cache_misses },
     { key: "error_count", value: manifest.error_count },
-    { key: "sheets", value: "摘要, 宽表_全部点位对齐, 每个点位长表, 运行记录, 错误记录(如有)" },
+    { key: "dual_source.status", value: manifest.dual_source?.status || "未导入" },
+    { key: "dual_source.source_file", value: manifest.dual_source?.source_file || "" },
+    { key: "dual_source.method", value: manifest.dual_source?.method || "" },
+    { key: "dual_source.provider", value: manifest.dual_source?.provider || "" },
+    { key: "dual_source.provider_model", value: manifest.dual_source?.provider_model || "" },
+    { key: "dual_source.fetch_granularity", value: manifest.dual_source?.fetch_granularity || "" },
+    { key: "dual_source.sample_size", value: manifest.dual_source?.sample_size || "" },
+    { key: "dual_source.seed", value: manifest.dual_source?.seed || "" },
+    { key: "sheets", value: "摘要, 宽表_全部点位对齐, 每个点位长表, 双源一致校验(如有), 运行记录, 错误记录(如有)" },
   ];
   for (const site of manifest.sites) {
     rows.push({
@@ -1409,6 +1560,42 @@ function appendAoaSheet(workbook, name, aoa, usedNames) {
   XLSX.utils.book_append_sheet(workbook, sheet, safeSheetName(name, usedNames));
 }
 
+function dualSourceManifest() {
+  if (!dualSourceEvidence) {
+    return { status: "未导入" };
+  }
+  return {
+    status: "已导入",
+    source_file: dualSourceEvidence.source_file,
+    loaded_at: dualSourceEvidence.loaded_at,
+    method: dualSourceEvidence.method,
+    provider: dualSourceEvidence.provider,
+    provider_model: dualSourceEvidence.provider_model,
+    fetch_granularity: dualSourceEvidence.fetch_granularity,
+    sample_size: dualSourceEvidence.sample_size,
+    seed: dualSourceEvidence.seed,
+    thresholds: dualSourceEvidence.thresholds,
+    row_count: dualSourceEvidence.rows.length,
+  };
+}
+
+const DUAL_SOURCE_COLUMNS = [
+  "site_id",
+  "name",
+  "country",
+  "sample_count",
+  "compared_count",
+  "missing_count",
+  "nasa_mean_sample_t2m_c",
+  "era5_mean_sample_t2m_c",
+  "mean_bias_era5_minus_nasa_c",
+  "p95_abs_point_diff_c",
+  "p95_band_mean_bias_c",
+  "tail_mean_bias_c",
+  "status",
+  "reason",
+];
+
 function downloadExcelWorkbook() {
   if (!activeResult) return;
   if (!window.XLSX) {
@@ -1424,6 +1611,10 @@ function downloadExcelWorkbook() {
   for (const site of activeResult.manifest.sites) {
     const rows = activeResult.longRows.filter((row) => row.site_id === site.site_id);
     appendJsonSheet(workbook, `${site.name || site.site_id}_长表`, rows, activeResult.longColumns, usedNames);
+  }
+
+  if (activeResult.dualSource?.rows?.length) {
+    appendJsonSheet(workbook, "双源一致校验", activeResult.dualSource.rows, DUAL_SOURCE_COLUMNS, usedNames);
   }
 
   appendJsonSheet(workbook, "运行记录", manifestRows(activeResult.manifest), ["key", "value"], usedNames);
@@ -1582,6 +1773,12 @@ async function runExport() {
       "exceed_count",
       "exceed_ratio",
       "exceed_ratio_percent",
+      "dual_source_status",
+      "dual_source_reason",
+      "dual_source_sample_count",
+      "dual_source_compared_count",
+      "dual_source_mean_bias_c",
+      "dual_source_tail_bias_c",
       "cache_hits",
       "cache_misses",
       "failed_years",
@@ -1612,6 +1809,7 @@ async function runExport() {
       parameter_meaning: "2-meter air temperature, hourly average, degree Celsius",
       community: COMMUNITY,
       params,
+      dual_source: dualSourceManifest(),
       site_count: sites.length,
       sites,
       total_requests: requests.length,
@@ -1634,6 +1832,7 @@ async function runExport() {
       wideColumns: wide.columns,
       errors,
       errorColumns,
+      dualSource: dualSourceEvidence ? { rows: dualSourceEvidence.rows } : null,
       manifest,
     };
 
@@ -1674,6 +1873,13 @@ elements.fileInput.addEventListener("change", async () => {
   const file = elements.fileInput.files?.[0];
   if (!file) return;
   elements.csvInput.value = await file.text();
+});
+elements.dualSourceFile.addEventListener("change", async () => {
+  const file = elements.dualSourceFile.files?.[0];
+  await loadDualSourceEvidenceFromFile(file);
+});
+elements.clearDualSource.addEventListener("click", () => {
+  clearDualSourceEvidence();
 });
 elements.geocodeButton.addEventListener("click", () => {
   runGeocodeSearch();

@@ -19,6 +19,8 @@
 
 如果只知道国家名称，可以用“按国家列出城市”。工具会返回已维护国家的内置 Top 经济城市候选，候选仍需手动确认后加入 CSV。这些列表是便于气温拉取的实用候选，不是官方 GDP 精确排名证据；如需严谨 GDP 排名，应外部核验后手工输入坐标。未内置国家请用“按城市名添加点位”逐个查询，或直接手工输入经纬度。
 
+如果已经用 ERA5-Land 做过抽样校验，可以在“双源一致证据”处上传 `era5_lightweight_sample_check_summary.json` 或城市汇总 CSV。网页会把城市级 `双源一致 / 双源基本一致，高温尾部需标注 / 需第三/第四源投票` 状态合入摘要和 Excel 的 `双源一致校验` sheet；未上传时显示为 `未导入`，不影响 NASA 主数据拉取。
+
 复制到本地运行时，保留整个 `web/` 文件夹即可；至少需要 `web/index.html`、`web/app.js`、`web/styles.css` 三个文件在同一目录。
 
 Excel 工作簿包含：
@@ -26,6 +28,7 @@ Excel 工作簿包含：
 - `摘要`：数据口径、缓存命中、超温占比和每个点位统计。
 - `宽表_全部点位对齐`：按 `date + hour` 对齐全部点位。
 - 每个点位一个 `*_长表`：逐日逐小时气温明细。
+- `双源一致校验`：仅在上传 ERA5-Land 校验结果时生成。
 - `运行记录`：本次参数、工具版本和点位清单。
 - `错误记录`：仅在 NASA 请求失败时生成。
 
@@ -101,7 +104,7 @@ Excel 包含：
 
 ## ERA5-Land 轻量抽样校验
 
-ERA5-Land 校验是 NASA POWER 主线之外的旁路抽检，不修改 `web/`、NASA 导出脚本、NASA 缓存或现有 Excel。它会读取已有 NASA 长表 CSV，每城按固定随机种子抽 `100` 个时间点，再通过 Open-Meteo Historical Weather API 的 `era5_land` 模型查询 ERA5-Land `temperature_2m`。默认按抽样点所在 UTC 年份批量缓存，以减少 API 请求次数；如需严格日级请求，可加 `--fetch-granularity day`。
+ERA5-Land 校验是 NASA POWER 主线之外的可选双源一致证据层。它会读取已有 NASA 长表 CSV，每城按固定随机种子抽 `100` 个时间点，再通过 Open-Meteo Historical Weather API 的 `era5_land` 模型查询 ERA5-Land `temperature_2m`。默认按抽样点所在 UTC 年份批量缓存，以减少 API 请求次数；如需严格日级请求，可加 `--fetch-granularity day`。
 
 默认运行：
 
@@ -123,3 +126,5 @@ python3 scripts/era5_lightweight_sample_check.py --cities jizan_saudi,kuwait_cit
 - `docs/era5_lightweight_sample_check_report.md`：中文报告。
 
 判定默认使用：抽样均值偏差 `<= 1.5°C` 视为通过；高温分层均值偏差 `<= 3°C` 视为双源一致，`3-4°C` 视为“双源基本一致，高温尾部需标注”，`> 4°C` 进入第三、第四源投票；单点绝对偏差 P95 只作为硬异常观察项，`> 6°C` 才触发投票。第三、第四源优先引入 `NOAA ISD / Global Hourly` 和 `MERRA-2`。
+
+融合设计见 `docs/dual_source_consistency_design.md`。网页端不会主动批量请求 ERA5；推荐先运行脚本生成校验 JSON，再上传到网页导出的 Excel 中。
