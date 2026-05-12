@@ -14,6 +14,8 @@ const DUAL_SOURCE_MEAN_THRESHOLD_C = 1.5;
 const DUAL_SOURCE_TAIL_THRESHOLD_C = 3.0;
 const DUAL_SOURCE_TAIL_VOTE_THRESHOLD_C = 4.0;
 const DUAL_SOURCE_POINT_HARD_THRESHOLD_C = 6.0;
+const ERA5_MIN_REQUEST_INTERVAL_MS = 1800;
+const ERA5_RETRY_COUNT = 6;
 const DEFAULT_SAMPLE = [
   "site_id,name,latitude,longitude,country",
   "kuwait_city,科威特市,29.3759,47.9774,科威特",
@@ -495,6 +497,7 @@ const elements = {
 
 let activeResult = null;
 let lastGeocodeRequestAt = 0;
+let lastEra5RequestAt = 0;
 let dualSourceEvidence = null;
 
 function csvEscape(value) {
@@ -862,6 +865,15 @@ async function waitForGeocodeRateLimit() {
     await new Promise((resolve) => setTimeout(resolve, remaining));
   }
   lastGeocodeRequestAt = Date.now();
+}
+
+async function waitForEra5RateLimit() {
+  const now = Date.now();
+  const remaining = ERA5_MIN_REQUEST_INTERVAL_MS - (now - lastEra5RequestAt);
+  if (remaining > 0) {
+    await new Promise((resolve) => setTimeout(resolve, remaining));
+  }
+  lastEra5RequestAt = Date.now();
 }
 
 function rankGeocodeCandidate(candidate) {
@@ -1306,7 +1318,8 @@ async function fetchEra5Year(db, site, year, refreshCache) {
     const cached = await dbGet(db, "era5Responses", key);
     if (cached?.payload) return { payload: cached.payload, url, cacheHit: true };
   }
-  const payload = await fetchWithRetry(url, 3);
+  await waitForEra5RateLimit();
+  const payload = await fetchWithRetry(url, ERA5_RETRY_COUNT, { rateLimitAware: true });
   await dbPut(db, "era5Responses", {
     key,
     payload,
@@ -1542,19 +1555,33 @@ async function runAutomaticDualSourceCheck(db, siteResults, params, progressOffs
   };
 }
 
-async function fetchWithRetry(url, retries = 3) {
+function retryDelayMs(error, attempt, rateLimitAware) {
+  const retryAfter = Number(error?.retryAfterSeconds);
+  if (Number.isFinite(retryAfter) && retryAfter > 0) {
+    return retryAfter * 1000;
+  }
+  if (error?.status === 429 || rateLimitAware) {
+    return Math.min(2000 * attempt * attempt, 30000);
+  }
+  return 700 * attempt;
+}
+
+async function fetchWithRetry(url, retries = 3, options = {}) {
   let lastError = null;
   for (let attempt = 1; attempt <= retries; attempt += 1) {
     try {
       const response = await fetch(url, { cache: "no-store" });
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+        const error = new Error(`HTTP ${response.status}`);
+        error.status = response.status;
+        error.retryAfterSeconds = response.headers?.get("Retry-After");
+        throw error;
       }
       return await response.json();
     } catch (error) {
       lastError = error;
       if (attempt < retries) {
-        await new Promise((resolve) => setTimeout(resolve, 700 * attempt));
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs(error, attempt, options.rateLimitAware)));
       }
     }
   }

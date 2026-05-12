@@ -46,4 +46,4 @@ python3 scripts/era5_lightweight_sample_check.py --cities jizan_saudi,kuwait_cit
 
 - 双源一致是抽样校验，不是 ERA5 全量复算。
 - ERA5-Land 与 NASA POWER 存在网格、地形、时间标准和再分析模型差异，单点小时偏差不能直接作为否定依据。
-- 网页自动校验会请求 Open-Meteo 公共 API；大批量点位和多年范围会变慢，已有年度响应会缓存在 IndexedDB。
+- 网页自动校验会请求 Open-Meteo 公共 API；大批量点位和多年范围会变慢，已有年度响应会缓存在 IndexedDB。遇到 `HTTP 429` 时工具会限速退避重试，仍失败才标记为 `ERA5请求失败`。

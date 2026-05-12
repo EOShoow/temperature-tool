@@ -128,4 +128,4 @@ python3 scripts/era5_lightweight_sample_check.py --cities jizan_saudi,kuwait_cit
 
 判定默认使用：抽样均值偏差 `<= 1.5°C` 视为通过；高温分层均值偏差 `<= 3°C` 视为双源一致，`3-4°C` 视为“双源基本一致，高温尾部需标注”，`> 4°C` 进入第三、第四源投票；单点绝对偏差 P95 只作为硬异常观察项，`> 6°C` 才触发投票。第三、第四源优先引入 `NOAA ISD / Global Hourly` 和 `MERRA-2`。
 
-融合设计见 `docs/dual_source_consistency_design.md`。网页端默认自动请求 ERA5-Land，并在 IndexedDB 中缓存年度响应；如果自动请求失败，可用离线脚本生成校验 JSON 后在网页中导入。
+融合设计见 `docs/dual_source_consistency_design.md`。网页端默认自动请求 ERA5-Land，并在 IndexedDB 中缓存年度响应；公共接口返回 `HTTP 429` 时会限速退避重试。如果自动请求仍失败，可用离线脚本生成校验 JSON 后在网页中导入。
