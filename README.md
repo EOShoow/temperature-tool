@@ -19,7 +19,7 @@
 
 如果只知道国家名称，可以用“按国家列出城市”。工具会返回已维护国家的内置 Top 经济城市候选，候选仍需手动确认后加入 CSV。这些列表是便于气温拉取的实用候选，不是官方 GDP 精确排名证据；如需严谨 GDP 排名，应外部核验后手工输入坐标。未内置国家请用“按城市名添加点位”逐个查询，或直接手工输入经纬度。
 
-网页默认开启“自动双源校验”：NASA 主数据拉取完成后，浏览器会自动从每个点位抽样 `100` 个小时，请求 Open-Meteo ERA5-Land `temperature_2m`，并把城市级 `双源一致 / 双源基本一致，高温尾部需标注 / 需第三/第四源投票` 状态合入摘要和 Excel。也可以在“双源一致证据”处导入已有 `era5_lightweight_sample_check_summary.json` 或城市汇总 CSV 作为兜底。
+网页默认开启“自动双源校验”：NASA 主数据拉取完成后，浏览器会自动请求 Open-Meteo ERA5-Land `temperature_2m` 的固定三周窗口（每年 `01-01~01-07`、`05-01~05-07`、`10-01~10-07`），并把城市级 `双源一致 / 双源基本一致，高温窗口需标注 / 需第三/第四源投票` 状态合入摘要和 Excel。也可以在“双源一致证据”处导入已有 `era5_lightweight_sample_check_summary.json` 或城市汇总 CSV 作为兜底。
 
 复制到本地运行时，保留整个 `web/` 文件夹即可；至少需要 `web/index.html`、`web/app.js`、`web/styles.css` 三个文件在同一目录。
 
@@ -28,8 +28,8 @@ Excel 工作簿包含：
 - `摘要`：数据口径、缓存命中、超温占比和每个点位统计。
 - `宽表_全部点位对齐`：按 `date + hour` 对齐全部点位。
 - 每个点位一个 `*_长表`：逐日逐小时气温明细。
-- `双源一致校验`：自动 ERA5-Land 抽样校验或导入已有校验结果时生成。
-- `双源抽样明细`：自动校验时生成，记录每个抽样点的 NASA/ERA5 差值。
+- `双源一致校验`：自动 ERA5-Land 固定窗口校验或导入已有校验结果时生成。
+- `双源抽样明细`：自动校验时生成，记录每个固定窗口小时的 NASA/ERA5 差值。
 - `运行记录`：本次参数、工具版本和点位清单。
 - `错误记录`：仅在 NASA 请求失败时生成。
 
@@ -105,7 +105,7 @@ Excel 包含：
 
 ## ERA5-Land 轻量抽样校验
 
-ERA5-Land 校验是 NASA POWER 主线之外的双源一致证据层。网页端会自动抽样并按 UTC 年份请求 Open-Meteo Historical Weather API 的 `era5_land` 模型；离线脚本也可读取已有 NASA 长表 CSV，生成同口径报告。两种方式都默认每城按固定随机种子抽 `100` 个时间点。
+ERA5-Land 校验是 NASA POWER 主线之外的双源一致证据层。网页端默认按固定三周窗口请求 Open-Meteo Historical Weather API 的 `era5_land` 模型：每年 `01-01~01-07`、`05-01~05-07`、`10-01~10-07`，按窗口短日期范围和多坐标批量请求，避免为少量校验点拉全年小时数据。离线脚本仍保留旧的 `100` 点随机抽样口径，用于离线批量报告。
 
 默认运行：
 
@@ -126,6 +126,6 @@ python3 scripts/era5_lightweight_sample_check.py --cities jizan_saudi,kuwait_cit
 - `data/summary/era5_lightweight_sample_check_summary.json`：机器可读汇总。
 - `docs/era5_lightweight_sample_check_report.md`：中文报告。
 
-判定默认使用：抽样均值偏差 `<= 1.5°C` 视为通过；高温分层均值偏差 `<= 3°C` 视为双源一致，`3-4°C` 视为“双源基本一致，高温尾部需标注”，`> 4°C` 进入第三、第四源投票；单点绝对偏差 P95 只作为硬异常观察项，`> 6°C` 才触发投票。第三、第四源优先引入 `NOAA ISD / Global Hourly` 和 `MERRA-2`。
+网页端判定默认使用：固定窗口总体均值偏差 `<= 1.5°C` 视为通过；最大窗口均值偏差 `<= 3°C` 视为双源一致，`3-4°C` 视为“双源基本一致，高温窗口需标注”，`> 4°C` 进入第三、第四源投票；单点绝对偏差 P95 只作为硬异常观察项，`> 6°C` 才触发投票。第三、第四源优先引入 `NOAA ISD / Global Hourly` 和 `MERRA-2`。固定三周窗口是快速一致性证据，不等同于全年高温尾部全覆盖校验。
 
-融合设计见 `docs/dual_source_consistency_design.md`。网页端默认自动请求 ERA5-Land，并在 IndexedDB 中缓存年度响应；公共接口返回 `HTTP 429` 时会限速退避重试。如果自动请求仍失败，可用离线脚本生成校验 JSON 后在网页中导入。
+融合设计见 `docs/dual_source_consistency_design.md`。网页端默认自动请求 ERA5-Land，并在 IndexedDB 中缓存固定窗口响应；公共接口返回 `HTTP 429` 时会限速退避重试。如果自动请求仍失败，可用离线脚本生成校验 JSON 后在网页中导入。

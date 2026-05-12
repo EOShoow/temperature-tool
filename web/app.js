@@ -1,6 +1,6 @@
 "use strict";
 
-const TOOL_VERSION = "0.6.0";
+const TOOL_VERSION = "0.7.0";
 const NASA_ENDPOINT = "https://power.larc.nasa.gov/api/temporal/hourly/point";
 const NOMINATIM_ENDPOINT = "https://nominatim.openstreetmap.org/search";
 const OPEN_METEO_ARCHIVE_ENDPOINT = "https://archive-api.open-meteo.com/v1/archive";
@@ -8,8 +8,13 @@ const PARAMETER = "T2M";
 const COMMUNITY = "AG";
 const GEOCODE_MIN_INTERVAL_MS = 1000;
 const COUNTRY_CITY_LIMIT = 10;
-const DUAL_SOURCE_SAMPLE_SIZE = 100;
-const DUAL_SOURCE_SEED = 20260512;
+const DUAL_SOURCE_WINDOW_DAYS = 7;
+const DUAL_SOURCE_WINDOW_BATCH_SIZE = 20;
+const DUAL_SOURCE_WINDOWS = [
+  { label: "new_year_week", name: "元旦周", month: 1, day: 1 },
+  { label: "may_day_week", name: "五一周", month: 5, day: 1 },
+  { label: "national_day_week", name: "十一周", month: 10, day: 1 },
+];
 const DUAL_SOURCE_MEAN_THRESHOLD_C = 1.5;
 const DUAL_SOURCE_TAIL_THRESHOLD_C = 3.0;
 const DUAL_SOURCE_TAIL_VOTE_THRESHOLD_C = 4.0;
@@ -1158,6 +1163,9 @@ function normalizeDualSourceRow(row) {
     p95_abs_point_diff_c: firstPresent(row, ["p95_abs_point_diff_c", "point_p95_abs_diff"]),
     p95_band_mean_bias_c: firstPresent(row, ["p95_band_mean_bias_c", "p95_bias"]),
     tail_mean_bias_c: firstPresent(row, ["tail_mean_bias_c", "tail_bias"]),
+    max_window_mean_bias_c: firstPresent(row, ["max_window_mean_bias_c", "max_window_bias"]),
+    max_window_label: firstPresent(row, ["max_window_label", "max_window"]),
+    window_mean_biases: firstPresent(row, ["window_mean_biases", "window_biases"]),
     exceeded_items: firstPresent(row, ["exceeded_items", "超限项"]),
     exceeded_detail: firstPresent(row, ["exceeded_detail", "超限说明"]),
     validation_rule: firstPresent(row, ["validation_rule", "校验规则"]),
@@ -1203,6 +1211,8 @@ function parseDualSourceEvidence(text, filename) {
     fetch_granularity: payload.fetch_granularity || "",
     sample_size: payload.sample_size || "",
     seed: payload.seed || "",
+    window_days: payload.window_days || "",
+    windows: payload.windows || [],
     status: payload.status || "已导入",
     thresholds: {
       mean_threshold_c: payload.mean_threshold_c ?? "",
@@ -1220,7 +1230,8 @@ function dualSourceForSite(siteId) {
 }
 
 function dualSourceRuleText() {
-  return `抽样${DUAL_SOURCE_SAMPLE_SIZE}点；60%全时段、20% P95-P99、20%最高温尾部；均值偏差<=${DUAL_SOURCE_MEAN_THRESHOLD_C.toFixed(1)}°C；高温分层<=${DUAL_SOURCE_TAIL_THRESHOLD_C.toFixed(1)}°C为双源一致，${DUAL_SOURCE_TAIL_THRESHOLD_C.toFixed(1)}-${DUAL_SOURCE_TAIL_VOTE_THRESHOLD_C.toFixed(1)}°C需标注，>${DUAL_SOURCE_TAIL_VOTE_THRESHOLD_C.toFixed(1)}°C或单点P95>${DUAL_SOURCE_POINT_HARD_THRESHOLD_C.toFixed(1)}°C需第三/第四源投票。`;
+  const windows = DUAL_SOURCE_WINDOWS.map((windowDef) => `${String(windowDef.month).padStart(2, "0")}-${String(windowDef.day).padStart(2, "0")}起${DUAL_SOURCE_WINDOW_DAYS}天`).join("、");
+  return `固定三周窗口：${windows}；总体均值偏差<=${DUAL_SOURCE_MEAN_THRESHOLD_C.toFixed(1)}°C；最大窗口均值偏差<=${DUAL_SOURCE_TAIL_THRESHOLD_C.toFixed(1)}°C为双源一致，${DUAL_SOURCE_TAIL_THRESHOLD_C.toFixed(1)}-${DUAL_SOURCE_TAIL_VOTE_THRESHOLD_C.toFixed(1)}°C需标注，>${DUAL_SOURCE_TAIL_VOTE_THRESHOLD_C.toFixed(1)}°C或单点P95>${DUAL_SOURCE_POINT_HARD_THRESHOLD_C.toFixed(1)}°C需第三/第四源投票。`;
 }
 
 async function loadDualSourceEvidenceFromFile(file) {
@@ -1293,12 +1304,41 @@ function formatUtcHourKey(date) {
   return `${date.toISOString().slice(0, 13)}:00`;
 }
 
-function buildEra5Url(site, year) {
+function addDaysToIsoDate(isoDate, days) {
+  const date = new Date(`${isoDate}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return formatUtcDate(date);
+}
+
+function fixedWindowStart(year, windowDef) {
+  return `${year}-${String(windowDef.month).padStart(2, "0")}-${String(windowDef.day).padStart(2, "0")}`;
+}
+
+function fixedWindowEnd(year, windowDef) {
+  return addDaysToIsoDate(fixedWindowStart(year, windowDef), DUAL_SOURCE_WINDOW_DAYS - 1);
+}
+
+function chunkArray(items, size) {
+  const chunks = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
+}
+
+function utcFromRecord(record, longitude, timeStandard) {
+  if (timeStandard === "UTC") {
+    return new Date(`${record.date}T${record.hour}:00:00Z`);
+  }
+  return utcFromLocalSolar(record, longitude);
+}
+
+function buildEra5WindowUrl(sites, startDate, endDate) {
   const params = new URLSearchParams({
-    latitude: site.latitude.toFixed(4),
-    longitude: site.longitude.toFixed(4),
-    start_date: `${year}-01-01`,
-    end_date: `${year}-12-31`,
+    latitude: sites.map((site) => site.latitude.toFixed(4)).join(","),
+    longitude: sites.map((site) => site.longitude.toFixed(4)).join(","),
+    start_date: startDate,
+    end_date: endDate,
     hourly: "temperature_2m",
     temperature_unit: "celsius",
     timezone: "UTC",
@@ -1307,30 +1347,73 @@ function buildEra5Url(site, year) {
   return `${OPEN_METEO_ARCHIVE_ENDPOINT}?${params.toString()}`;
 }
 
-function era5CacheKey(site, year) {
-  return ["era5_land", "temperature_2m", site.site_id, site.latitude.toFixed(4), site.longitude.toFixed(4), year].join("|");
+function era5WindowCacheKey(site, year, windowDef, startDate, endDate) {
+  return [
+    "era5_land",
+    "temperature_2m",
+    "fixed_window",
+    site.site_id,
+    site.latitude.toFixed(4),
+    site.longitude.toFixed(4),
+    year,
+    windowDef.label,
+    startDate,
+    endDate,
+  ].join("|");
 }
 
-async function fetchEra5Year(db, site, year, refreshCache) {
-  const key = era5CacheKey(site, year);
-  const url = buildEra5Url(site, year);
-  if (!refreshCache) {
-    const cached = await dbGet(db, "era5Responses", key);
-    if (cached?.payload) return { payload: cached.payload, url, cacheHit: true };
+function normalizeEra5BatchPayload(payload, expectedCount) {
+  if (Array.isArray(payload)) return payload;
+  if (expectedCount === 1 && payload?.hourly) return [payload];
+  if (Array.isArray(payload?.results)) return payload.results;
+  if (Array.isArray(payload?.responses)) return payload.responses;
+  throw new Error("Open-Meteo 批量响应格式无法识别");
+}
+
+async function fetchEra5WindowBatch(db, sites, year, windowDef, startDate, endDate, refreshCache) {
+  const results = new Map();
+  const missingSites = [];
+  for (const site of sites) {
+    const key = era5WindowCacheKey(site, year, windowDef, startDate, endDate);
+    if (!refreshCache) {
+      const cached = await dbGet(db, "era5Responses", key);
+      if (cached?.payload) {
+        results.set(site.site_id, { payload: cached.payload, url: cached.url, cacheHit: true });
+        continue;
+      }
+    }
+    missingSites.push(site);
   }
-  await waitForEra5RateLimit();
-  const payload = await fetchWithRetry(url, ERA5_RETRY_COUNT, { rateLimitAware: true });
-  await dbPut(db, "era5Responses", {
-    key,
-    payload,
-    url,
-    saved_at: new Date().toISOString(),
-    site: { site_id: site.site_id, latitude: site.latitude, longitude: site.longitude },
-    year,
-    model: "era5_land",
-    parameter: "temperature_2m",
-  });
-  return { payload, url, cacheHit: false };
+  for (const chunk of chunkArray(missingSites, DUAL_SOURCE_WINDOW_BATCH_SIZE)) {
+    const url = buildEra5WindowUrl(chunk, startDate, endDate);
+    await waitForEra5RateLimit();
+    const payload = await fetchWithRetry(url, ERA5_RETRY_COUNT, { rateLimitAware: true });
+    const payloads = normalizeEra5BatchPayload(payload, chunk.length);
+    if (payloads.length < chunk.length) {
+      throw new Error(`Open-Meteo 批量响应数量不足：期望 ${chunk.length}，实际 ${payloads.length}`);
+    }
+    for (let index = 0; index < chunk.length; index += 1) {
+      const site = chunk[index];
+      const sitePayload = payloads[index];
+      const key = era5WindowCacheKey(site, year, windowDef, startDate, endDate);
+      await dbPut(db, "era5Responses", {
+        key,
+        payload: sitePayload,
+        url,
+        saved_at: new Date().toISOString(),
+        site: { site_id: site.site_id, latitude: site.latitude, longitude: site.longitude },
+        year,
+        window_label: windowDef.label,
+        window_name: windowDef.name,
+        start_date: startDate,
+        end_date: endDate,
+        model: "era5_land",
+        parameter: "temperature_2m",
+      });
+      results.set(site.site_id, { payload: sitePayload, url, cacheHit: false });
+    }
+  }
+  return results;
 }
 
 function extractEra5Temperature(payload, utcDate) {
@@ -1345,38 +1428,36 @@ function extractEra5Temperature(payload, utcDate) {
   return Number.isFinite(value) ? value : null;
 }
 
-function sampleSiteRows(siteResult) {
+function fixedWindowRowsForSite(siteResult, params) {
+  const hourColumn = `hour_${siteResult.timeStandard.toLowerCase()}`;
+  const datetimeColumn = `datetime_${siteResult.timeStandard.toLowerCase()}`;
   const rows = siteResult.rows
     .map((row) => ({
       date: row.date,
-      hour: row[`hour_${siteResult.timeStandard.toLowerCase()}`],
-      datetime: row[`datetime_${siteResult.timeStandard.toLowerCase()}`],
+      hour: row[hourColumn],
+      datetime: row[datetimeColumn],
       t2m_c: Number(row.t2m_c),
     }))
     .filter((row) => row.date && row.hour !== "" && Number.isFinite(row.t2m_c));
-  const values = rows.map((row) => row.t2m_c);
-  const p95 = percentile(values, 95);
-  const p99 = percentile(values, 99);
-  const p95Pool = rows.filter((row) => row.t2m_c >= p95 && row.t2m_c < p99);
-  const tailPool = rows.filter((row) => row.t2m_c >= p99);
-  const p95Count = Math.round(DUAL_SOURCE_SAMPLE_SIZE * 0.2);
-  const tailCount = Math.round(DUAL_SOURCE_SAMPLE_SIZE * 0.2);
-  const randomCount = DUAL_SOURCE_SAMPLE_SIZE - p95Count - tailCount;
   const selected = [];
-  const used = new Set();
-  const addSample = (stratum, record) => {
-    const key = `${record.date}|${record.hour}`;
-    if (used.has(key)) return;
-    selected.push({ ...record, stratum });
-    used.add(key);
-  };
-  for (const record of stableSample(rows, randomCount, `${DUAL_SOURCE_SEED}:${siteResult.site.site_id}:random`)) addSample("random", record);
-  for (const record of stableSample(p95Pool, p95Count, `${DUAL_SOURCE_SEED}:${siteResult.site.site_id}:p95_p99`)) addSample("p95_p99", record);
-  for (const record of stableSample(tailPool, tailCount, `${DUAL_SOURCE_SEED}:${siteResult.site.site_id}:tail`)) addSample("tail", record);
-  if (selected.length < DUAL_SOURCE_SAMPLE_SIZE) {
-    const remaining = rows.filter((row) => !used.has(`${row.date}|${row.hour}`));
-    for (const record of stableSample(remaining, DUAL_SOURCE_SAMPLE_SIZE - selected.length, `${DUAL_SOURCE_SEED}:${siteResult.site.site_id}:fill`)) {
-      addSample("fill", record);
+  for (let year = params.startYear; year <= params.endYear; year += 1) {
+    for (const windowDef of DUAL_SOURCE_WINDOWS) {
+      const startDate = fixedWindowStart(year, windowDef);
+      const endDate = fixedWindowEnd(year, windowDef);
+      for (const row of rows) {
+        if (row.date < startDate || row.date > endDate) continue;
+        const utcDate = utcFromRecord(row, siteResult.site.longitude, siteResult.timeStandard);
+        selected.push({
+          ...row,
+          year,
+          window_label: windowDef.label,
+          window_name: windowDef.name,
+          window_start_local: startDate,
+          window_end_local: endDate,
+          stratum: windowDef.label,
+          utcDate,
+        });
+      }
     }
   }
   return selected.sort((a, b) => `${a.date} ${a.hour}`.localeCompare(`${b.date} ${b.hour}`));
@@ -1407,50 +1488,63 @@ function summarizeDualSourceRows(site, rows, fetchFailures = []) {
       max_abs_point_diff_c: "",
       p95_band_mean_bias_c: "",
       tail_mean_bias_c: "",
+      max_window_mean_bias_c: "",
+      max_window_label: "",
+      window_mean_biases: "",
       exceeded_items: exceeded.length ? exceeded.join(";") : "ERA5缺测",
-      exceeded_detail: reasons.join("；") || "ERA5 抽样点未返回可比较温度",
+      exceeded_detail: reasons.join("；") || "ERA5 固定窗口点未返回可比较温度",
       validation_rule: dualSourceRuleText(),
       status: "需第三/第四源投票",
-      reason: reasons.join("；") || "ERA5 抽样点未返回可比较温度",
+      reason: reasons.join("；") || "ERA5 固定窗口点未返回可比较温度",
     };
   }
   const nasaValues = compared.map((row) => row.nasa_t2m_c);
   const era5Values = compared.map((row) => row.era5_t2m_c);
   const absDiffs = compared.map((row) => Math.abs(row.era5_t2m_c - row.nasa_t2m_c));
   const meanBias = mean(era5Values) - mean(nasaValues);
-  const p95Rows = compared.filter((row) => row.stratum === "p95_p99");
-  const tailRows = compared.filter((row) => row.stratum === "tail");
-  const p95Bias = p95Rows.length ? mean(p95Rows.map((row) => row.era5_t2m_c)) - mean(p95Rows.map((row) => row.nasa_t2m_c)) : NaN;
-  const tailBias = tailRows.length ? mean(tailRows.map((row) => row.era5_t2m_c)) - mean(tailRows.map((row) => row.nasa_t2m_c)) : NaN;
+  const windowGroups = new Map();
+  for (const row of compared) {
+    const label = row.window_label || row.stratum || "unknown_window";
+    if (!windowGroups.has(label)) windowGroups.set(label, []);
+    windowGroups.get(label).push(row);
+  }
+  const windowBiases = Array.from(windowGroups.entries()).map(([label, group]) => ({
+    label,
+    bias: mean(group.map((row) => row.era5_t2m_c)) - mean(group.map((row) => row.nasa_t2m_c)),
+  }));
+  const maxWindow = windowBiases.reduce((best, item) => {
+    if (!best || Math.abs(item.bias) > Math.abs(best.bias)) return item;
+    return best;
+  }, null);
+  const maxWindowBiasAbs = maxWindow ? Math.abs(maxWindow.bias) : NaN;
+  const windowBiasText = windowBiases.map((item) => `${item.label}:${item.bias.toFixed(3)}`).join(";");
   const pointP95AbsDiff = percentile(absDiffs, 95);
-  const tailChecks = [p95Bias, tailBias].filter((value) => !Number.isNaN(value)).map((value) => Math.abs(value));
-  const maxTailBiasAbs = tailChecks.length ? Math.max(...tailChecks) : NaN;
   if (missingCount > 0) {
     exceeded.push("ERA5缺测");
     reasons.push(`ERA5 缺测 ${missingCount} 点`);
   }
   if (Math.abs(meanBias) > DUAL_SOURCE_MEAN_THRESHOLD_C) {
-    exceeded.push("抽样均值偏差");
-    reasons.push(`抽样均值偏差 ${Math.abs(meanBias).toFixed(2)}°C > ${DUAL_SOURCE_MEAN_THRESHOLD_C.toFixed(2)}°C`);
+    exceeded.push("总体均值偏差");
+    reasons.push(`总体均值偏差 ${Math.abs(meanBias).toFixed(2)}°C > ${DUAL_SOURCE_MEAN_THRESHOLD_C.toFixed(2)}°C`);
   }
-  if (!Number.isNaN(maxTailBiasAbs) && maxTailBiasAbs > DUAL_SOURCE_TAIL_VOTE_THRESHOLD_C) {
-    exceeded.push("高温分层均值偏差");
-    reasons.push(`高温分层均值偏差 ${maxTailBiasAbs.toFixed(2)}°C > ${DUAL_SOURCE_TAIL_VOTE_THRESHOLD_C.toFixed(2)}°C`);
+  if (!Number.isNaN(maxWindowBiasAbs) && maxWindowBiasAbs > DUAL_SOURCE_TAIL_VOTE_THRESHOLD_C) {
+    exceeded.push("固定窗口均值偏差");
+    reasons.push(`最大窗口均值偏差 ${maxWindowBiasAbs.toFixed(2)}°C > ${DUAL_SOURCE_TAIL_VOTE_THRESHOLD_C.toFixed(2)}°C（${maxWindow.label}）`);
   }
   if (pointP95AbsDiff > DUAL_SOURCE_POINT_HARD_THRESHOLD_C) {
     exceeded.push("单点绝对偏差P95");
     reasons.push(`单点绝对偏差 P95 ${pointP95AbsDiff.toFixed(2)}°C > ${DUAL_SOURCE_POINT_HARD_THRESHOLD_C.toFixed(2)}°C`);
   }
-  const tailMark = !Number.isNaN(maxTailBiasAbs) && maxTailBiasAbs > DUAL_SOURCE_TAIL_THRESHOLD_C;
+  const windowMark = !Number.isNaN(maxWindowBiasAbs) && maxWindowBiasAbs > DUAL_SOURCE_TAIL_THRESHOLD_C;
   let status = "双源一致";
-  let reason = "抽样均值和高温尾部低于工程阈值；单点 P95 未触发硬异常线";
+  let reason = "固定三周窗口总体均值和窗口均值低于工程阈值；单点 P95 未触发硬异常线";
   if (reasons.length) {
     status = "需第三/第四源投票";
     reason = reasons.join("；");
-  } else if (tailMark) {
-    status = "双源基本一致，高温尾部需标注";
-    exceeded.push("高温尾部标注");
-    reason = `抽样均值通过；高温分层均值偏差 ${maxTailBiasAbs.toFixed(2)}°C 位于 ${DUAL_SOURCE_TAIL_THRESHOLD_C.toFixed(2)}-${DUAL_SOURCE_TAIL_VOTE_THRESHOLD_C.toFixed(2)}°C 标注区间`;
+  } else if (windowMark) {
+    status = "双源基本一致，高温窗口需标注";
+    exceeded.push("高温窗口标注");
+    reason = `总体均值通过；最大窗口均值偏差 ${maxWindowBiasAbs.toFixed(2)}°C 位于 ${DUAL_SOURCE_TAIL_THRESHOLD_C.toFixed(2)}-${DUAL_SOURCE_TAIL_VOTE_THRESHOLD_C.toFixed(2)}°C 标注区间（${maxWindow.label}）`;
   }
   return {
     site_id: site.site_id,
@@ -1465,8 +1559,11 @@ function summarizeDualSourceRows(site, rows, fetchFailures = []) {
     mean_abs_diff_c: mean(absDiffs).toFixed(3),
     p95_abs_point_diff_c: pointP95AbsDiff.toFixed(3),
     max_abs_point_diff_c: Math.max(...absDiffs).toFixed(3),
-    p95_band_mean_bias_c: Number.isNaN(p95Bias) ? "" : p95Bias.toFixed(3),
-    tail_mean_bias_c: Number.isNaN(tailBias) ? "" : tailBias.toFixed(3),
+    p95_band_mean_bias_c: "",
+    tail_mean_bias_c: maxWindow ? maxWindow.bias.toFixed(3) : "",
+    max_window_mean_bias_c: maxWindow ? maxWindow.bias.toFixed(3) : "",
+    max_window_label: maxWindow ? maxWindow.label : "",
+    window_mean_biases: windowBiasText,
     exceeded_items: exceeded.join(";"),
     exceeded_detail: reason,
     validation_rule: dualSourceRuleText(),
@@ -1475,34 +1572,88 @@ function summarizeDualSourceRows(site, rows, fetchFailures = []) {
   };
 }
 
+function prepareDualSourceWindowContexts(siteResults, params) {
+  return siteResults.map((siteResult) => ({
+    siteResult,
+    site: siteResult.site,
+    rows: fixedWindowRowsForSite(siteResult, params),
+    sources: new Map(),
+    fetchFailures: [],
+  }));
+}
+
+function buildDualSourceWindowJobs(contexts) {
+  const jobs = new Map();
+  for (const context of contexts) {
+    for (const row of context.rows) {
+      const windowDef = DUAL_SOURCE_WINDOWS.find((item) => item.label === row.window_label);
+      if (!windowDef) continue;
+      const key = `${row.year}|${row.window_label}`;
+      if (!jobs.has(key)) {
+        jobs.set(key, {
+          key,
+          year: row.year,
+          windowDef,
+          contexts: new Map(),
+          utcDates: [],
+        });
+      }
+      const job = jobs.get(key);
+      job.contexts.set(context.site.site_id, context);
+      job.utcDates.push(row.utcDate);
+    }
+  }
+  return Array.from(jobs.values()).map((job) => {
+    const utcDates = job.utcDates.map(formatUtcDate).sort();
+    return {
+      ...job,
+      startDate: utcDates[0],
+      endDate: utcDates[utcDates.length - 1],
+    };
+  });
+}
+
+function countDualSourceWindowBatches(siteResults, params) {
+  const contexts = prepareDualSourceWindowContexts(siteResults, params);
+  return buildDualSourceWindowJobs(contexts).reduce((sum, job) => (
+    sum + Math.max(1, Math.ceil(job.contexts.size / DUAL_SOURCE_WINDOW_BATCH_SIZE))
+  ), 0);
+}
+
 async function runAutomaticDualSourceCheck(db, siteResults, params, progressOffset, progressTotal) {
   const sampleRows = [];
   const cityRows = [];
+  const contexts = prepareDualSourceWindowContexts(siteResults, params);
+  const jobs = buildDualSourceWindowJobs(contexts);
   let step = 0;
-  for (const siteResult of siteResults) {
-    const site = siteResult.site;
-    const samples = sampleSiteRows(siteResult);
-    const fetchFailures = [];
-    const years = Array.from(new Set(samples.map((sample) => utcFromLocalSolar(sample, site.longitude).getUTCFullYear()))).sort();
-    const payloads = new Map();
-    for (const year of years) {
+  for (const job of jobs) {
+    const contextsForJob = Array.from(job.contexts.values());
+    for (const chunk of chunkArray(contextsForJob, DUAL_SOURCE_WINDOW_BATCH_SIZE)) {
       step += 1;
-      setProgress(progressOffset + step - 1, progressTotal, `双源校验 ${site.name} ERA5 ${year}`);
+      const sites = chunk.map((context) => context.site);
+      setProgress(progressOffset + step - 1, progressTotal, `双源校验 ERA5 ${job.year} ${job.windowDef.name}（${sites.length}点位）`);
       try {
-        const { payload, url, cacheHit } = await fetchEra5Year(db, site, year, params.refreshCache);
-        payloads.set(year, { payload, url, cacheHit });
+        const batchResults = await fetchEra5WindowBatch(db, sites, job.year, job.windowDef, job.startDate, job.endDate, params.refreshCache);
+        for (const context of chunk) {
+          const source = batchResults.get(context.site.site_id);
+          if (source) context.sources.set(job.key, source);
+        }
       } catch (error) {
-        fetchFailures.push(`${year}: ${error.message || error}`);
+        const message = `${job.year} ${job.windowDef.name}: ${error.message || error}`;
+        for (const context of chunk) {
+          context.fetchFailures.push(message);
+        }
       }
-      setProgress(progressOffset + step, progressTotal, `双源校验 ${site.name} ERA5 ${year} 完成`);
+      setProgress(progressOffset + step, progressTotal, `双源校验 ERA5 ${job.year} ${job.windowDef.name} 完成`);
     }
+  }
+  for (const context of contexts) {
+    const site = context.site;
     let index = 0;
-    for (const sample of samples) {
+    for (const sample of context.rows) {
       index += 1;
-      const utcDate = utcFromLocalSolar(sample, site.longitude);
-      const year = utcDate.getUTCFullYear();
-      const source = payloads.get(year);
-      const era5 = source ? extractEra5Temperature(source.payload, utcDate) : null;
+      const source = context.sources.get(`${sample.year}|${sample.window_label}`);
+      const era5 = source ? extractEra5Temperature(source.payload, sample.utcDate) : null;
       const diff = Number.isFinite(era5) ? era5 - sample.t2m_c : null;
       sampleRows.push({
         site_id: site.site_id,
@@ -1512,10 +1663,14 @@ async function runAutomaticDualSourceCheck(db, siteResults, params, progressOffs
         longitude: site.longitude.toFixed(4),
         sample_index: index,
         stratum: sample.stratum,
+        window_label: sample.window_label,
+        window_name: sample.window_name,
+        window_start_local: sample.window_start_local,
+        window_end_local: sample.window_end_local,
         nasa_datetime_local: sample.datetime,
         nasa_date: sample.date,
         nasa_hour: sample.hour,
-        era5_datetime_utc: formatUtcHourKey(utcDate).replace("T", " "),
+        era5_datetime_utc: formatUtcHourKey(sample.utcDate).replace("T", " "),
         nasa_t2m_c: sample.t2m_c,
         era5_t2m_c: era5 === null ? "" : Number(era5.toFixed(3)),
         diff_era5_minus_nasa_c: diff === null ? "" : Number(diff.toFixed(3)),
@@ -1529,7 +1684,7 @@ async function runAutomaticDualSourceCheck(db, siteResults, params, progressOffs
       ...row,
       nasa_t2m_c: Number(row.nasa_t2m_c),
       era5_t2m_c: row.era5_t2m_c === "" ? null : Number(row.era5_t2m_c),
-    })), fetchFailures));
+    })), context.fetchFailures));
   }
   const bySiteId = new Map();
   for (const row of cityRows) bySiteId.set(normalizeSearchText(row.site_id), row);
@@ -1537,12 +1692,20 @@ async function runAutomaticDualSourceCheck(db, siteResults, params, progressOffs
     status: "自动校验完成",
     source_file: "",
     loaded_at: new Date().toISOString(),
-    method: "Browser automatic NASA POWER sample checked against Open-Meteo ERA5-Land temperature_2m",
+    method: "Browser automatic NASA POWER fixed 3-week windows checked against Open-Meteo ERA5-Land temperature_2m",
     provider: "Open-Meteo Historical Weather API",
     provider_model: "era5_land",
-    fetch_granularity: "year",
-    sample_size: DUAL_SOURCE_SAMPLE_SIZE,
-    seed: DUAL_SOURCE_SEED,
+    fetch_granularity: "fixed_3_week_windows",
+    window_days: DUAL_SOURCE_WINDOW_DAYS,
+    windows: DUAL_SOURCE_WINDOWS.map((windowDef) => ({
+      label: windowDef.label,
+      name: windowDef.name,
+      month: windowDef.month,
+      day: windowDef.day,
+      days: DUAL_SOURCE_WINDOW_DAYS,
+    })),
+    sample_size: "",
+    seed: "",
     thresholds: {
       mean_threshold_c: DUAL_SOURCE_MEAN_THRESHOLD_C,
       tail_threshold_c: DUAL_SOURCE_TAIL_THRESHOLD_C,
@@ -1813,7 +1976,7 @@ function summarySheetAoa(result) {
     ["双源校验规则", manifest.dual_source?.validation_rule || dualSourceRuleText()],
     ["工具版本", manifest.tool_version],
     ["生成时间", manifest.generated_at],
-    ["说明", "T2M 为 2 米气温小时平均值，单位摄氏度；宽表按 date + hour 对齐全部点位；双源一致为抽样证据层，不是 ERA5 全量复算。"],
+    ["说明", "T2M 为 2 米气温小时平均值，单位摄氏度；宽表按 date + hour 对齐全部点位；双源一致为固定窗口快速证据层，不是 ERA5 全量复算。"],
     [],
     [
       "site_id",
@@ -1891,9 +2054,11 @@ function manifestRows(manifest) {
     { key: "dual_source.fetch_granularity", value: manifest.dual_source?.fetch_granularity || "" },
     { key: "dual_source.sample_size", value: manifest.dual_source?.sample_size || "" },
     { key: "dual_source.seed", value: manifest.dual_source?.seed || "" },
+    { key: "dual_source.window_days", value: manifest.dual_source?.window_days || "" },
+    { key: "dual_source.windows", value: manifest.dual_source?.windows ? JSON.stringify(manifest.dual_source.windows) : "" },
     { key: "dual_source.validation_rule", value: manifest.dual_source?.validation_rule || dualSourceRuleText() },
-    { key: "dual_source.note", value: "双源一致为抽样证据层，不是 ERA5 全量复算；不通过时优先查看 exceeded_items / exceeded_detail。" },
-    { key: "sheets", value: "摘要, 宽表_全部点位对齐, 每个点位长表, 双源一致校验(如有), 双源抽样明细(如有), 运行记录, 错误记录(如有)" },
+    { key: "dual_source.note", value: "双源一致为固定三周窗口快速证据层，不等同于全年高温尾部全覆盖校验；不通过时优先查看 exceeded_items / exceeded_detail。" },
+    { key: "sheets", value: "摘要, 宽表_全部点位对齐, 每个点位长表, 双源一致校验(如有), 双源抽样明细(固定窗口小时明细，如有), 运行记录, 错误记录(如有)" },
   ];
   for (const site of manifest.sites) {
     rows.push({
@@ -1943,6 +2108,8 @@ function dualSourceManifest() {
     fetch_granularity: dualSourceEvidence.fetch_granularity,
     sample_size: dualSourceEvidence.sample_size,
     seed: dualSourceEvidence.seed,
+    window_days: dualSourceEvidence.window_days,
+    windows: dualSourceEvidence.windows,
     thresholds: dualSourceEvidence.thresholds,
     validation_rule: dualSourceRuleText(),
     row_count: dualSourceEvidence.rows.length,
@@ -1962,6 +2129,9 @@ const DUAL_SOURCE_COLUMNS = [
   "p95_abs_point_diff_c",
   "p95_band_mean_bias_c",
   "tail_mean_bias_c",
+  "max_window_mean_bias_c",
+  "max_window_label",
+  "window_mean_biases",
   "exceeded_items",
   "exceeded_detail",
   "validation_rule",
@@ -1977,6 +2147,10 @@ const DUAL_SOURCE_SAMPLE_COLUMNS = [
   "longitude",
   "sample_index",
   "stratum",
+  "window_label",
+  "window_name",
+  "window_start_local",
+  "window_end_local",
   "nasa_datetime_local",
   "nasa_date",
   "nasa_hour",
@@ -2169,21 +2343,17 @@ async function runExport() {
 
     let dualProgressTotal = total;
     if (params.autoDualSource) {
-      dualProgressTotal = total + siteResults.reduce((sum, item) => {
-        const samples = sampleSiteRows(item);
-        const utcYears = new Set(samples.map((sample) => utcFromLocalSolar(sample, item.site.longitude).getUTCFullYear()));
-        return sum + Math.max(utcYears.size, 1);
-      }, 0);
+      dualProgressTotal = total + countDualSourceWindowBatches(siteResults, params);
       setProgress(total, dualProgressTotal || total + 1, "NASA 拉取完成，开始 ERA5-Land 自动双源校验...");
       dualSourceEvidence = await runAutomaticDualSourceCheck(db, siteResults, params, total, dualProgressTotal || total + 1);
       const failedDual = dualSourceEvidence.rows.filter((row) => row.status === "需第三/第四源投票");
-      const markedDual = dualSourceEvidence.rows.filter((row) => row.status === "双源基本一致，高温尾部需标注");
+      const markedDual = dualSourceEvidence.rows.filter((row) => row.status === "双源基本一致，高温窗口需标注");
       if (failedDual.length) {
         const details = failedDual.slice(0, 3).map((row) => `${row.name || row.site_id} ${row.exceeded_detail || row.reason}`).join("；");
         setWarning(`${failedDual.length} 个点位需第三/第四源投票：${details}`, true);
       } else if (markedDual.length) {
         const details = markedDual.slice(0, 3).map((row) => `${row.name || row.site_id} ${row.exceeded_detail || row.reason}`).join("；");
-        setWarning(`${markedDual.length} 个点位双源基本一致但高温尾部需标注：${details}`);
+        setWarning(`${markedDual.length} 个点位双源基本一致但高温窗口需标注：${details}`);
       } else if (!warnings.length) {
         setWarning("");
       }
