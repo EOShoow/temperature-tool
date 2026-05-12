@@ -1,12 +1,19 @@
 "use strict";
 
-const TOOL_VERSION = "0.5.0";
+const TOOL_VERSION = "0.6.0";
 const NASA_ENDPOINT = "https://power.larc.nasa.gov/api/temporal/hourly/point";
 const NOMINATIM_ENDPOINT = "https://nominatim.openstreetmap.org/search";
+const OPEN_METEO_ARCHIVE_ENDPOINT = "https://archive-api.open-meteo.com/v1/archive";
 const PARAMETER = "T2M";
 const COMMUNITY = "AG";
 const GEOCODE_MIN_INTERVAL_MS = 1000;
 const COUNTRY_CITY_LIMIT = 10;
+const DUAL_SOURCE_SAMPLE_SIZE = 100;
+const DUAL_SOURCE_SEED = 20260512;
+const DUAL_SOURCE_MEAN_THRESHOLD_C = 1.5;
+const DUAL_SOURCE_TAIL_THRESHOLD_C = 3.0;
+const DUAL_SOURCE_TAIL_VOTE_THRESHOLD_C = 4.0;
+const DUAL_SOURCE_POINT_HARD_THRESHOLD_C = 6.0;
 const DEFAULT_SAMPLE = [
   "site_id,name,latitude,longitude,country",
   "kuwait_city,科威特市,29.3759,47.9774,科威特",
@@ -474,6 +481,7 @@ const elements = {
   timeStandard: document.getElementById("timeStandard"),
   threshold: document.getElementById("threshold"),
   refreshCache: document.getElementById("refreshCache"),
+  autoDualSource: document.getElementById("autoDualSource"),
   runButton: document.getElementById("runButton"),
   clearCache: document.getElementById("clearCache"),
   progressBar: document.getElementById("progressBar"),
@@ -755,7 +763,7 @@ function appendCandidateToCsv(candidate) {
 
 function openDatabase() {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open("nasa-power-temperature-tool", 3);
+    const request = indexedDB.open("nasa-power-temperature-tool", 4);
     request.onupgradeneeded = () => {
       const db = request.result;
       if (!db.objectStoreNames.contains("responses")) {
@@ -766,6 +774,9 @@ function openDatabase() {
       }
       if (!db.objectStoreNames.contains("countryCities")) {
         db.createObjectStore("countryCities", { keyPath: "key" });
+      }
+      if (!db.objectStoreNames.contains("era5Responses")) {
+        db.createObjectStore("era5Responses", { keyPath: "key" });
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -1135,6 +1146,9 @@ function normalizeDualSourceRow(row) {
     p95_abs_point_diff_c: firstPresent(row, ["p95_abs_point_diff_c", "point_p95_abs_diff"]),
     p95_band_mean_bias_c: firstPresent(row, ["p95_band_mean_bias_c", "p95_bias"]),
     tail_mean_bias_c: firstPresent(row, ["tail_mean_bias_c", "tail_bias"]),
+    exceeded_items: firstPresent(row, ["exceeded_items", "超限项"]),
+    exceeded_detail: firstPresent(row, ["exceeded_detail", "超限说明"]),
+    validation_rule: firstPresent(row, ["validation_rule", "校验规则"]),
     status,
     reason: firstPresent(row, ["reason", "备注", "说明"]),
   };
@@ -1177,6 +1191,7 @@ function parseDualSourceEvidence(text, filename) {
     fetch_granularity: payload.fetch_granularity || "",
     sample_size: payload.sample_size || "",
     seed: payload.seed || "",
+    status: payload.status || "已导入",
     thresholds: {
       mean_threshold_c: payload.mean_threshold_c ?? "",
       tail_threshold_c: payload.tail_threshold_c ?? "",
@@ -1190,6 +1205,10 @@ function parseDualSourceEvidence(text, filename) {
 
 function dualSourceForSite(siteId) {
   return dualSourceEvidence?.bySiteId.get(normalizeSearchText(siteId)) || null;
+}
+
+function dualSourceRuleText() {
+  return `抽样${DUAL_SOURCE_SAMPLE_SIZE}点；60%全时段、20% P95-P99、20%最高温尾部；均值偏差<=${DUAL_SOURCE_MEAN_THRESHOLD_C.toFixed(1)}°C；高温分层<=${DUAL_SOURCE_TAIL_THRESHOLD_C.toFixed(1)}°C为双源一致，${DUAL_SOURCE_TAIL_THRESHOLD_C.toFixed(1)}-${DUAL_SOURCE_TAIL_VOTE_THRESHOLD_C.toFixed(1)}°C需标注，>${DUAL_SOURCE_TAIL_VOTE_THRESHOLD_C.toFixed(1)}°C或单点P95>${DUAL_SOURCE_POINT_HARD_THRESHOLD_C.toFixed(1)}°C需第三/第四源投票。`;
 }
 
 async function loadDualSourceEvidenceFromFile(file) {
@@ -1211,7 +1230,316 @@ async function loadDualSourceEvidenceFromFile(file) {
 function clearDualSourceEvidence() {
   dualSourceEvidence = null;
   elements.dualSourceFile.value = "";
-  setDualSourceStatus("未导入；不影响 NASA 主数据拉取。");
+  setDualSourceStatus("未导入；自动校验开启时会生成本次证据。");
+}
+
+function percentile(values, percent) {
+  const ordered = values.filter((value) => Number.isFinite(value)).sort((a, b) => a - b);
+  if (!ordered.length) return NaN;
+  const k = (ordered.length - 1) * percent / 100;
+  const lower = Math.floor(k);
+  const upper = Math.ceil(k);
+  if (lower === upper) return ordered[lower];
+  return ordered[lower] * (upper - k) + ordered[upper] * (k - lower);
+}
+
+function mean(values) {
+  const finite = values.filter((value) => Number.isFinite(value));
+  return finite.length ? finite.reduce((sum, value) => sum + value, 0) / finite.length : NaN;
+}
+
+function hashString(value) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function stableSample(pool, count, seedKey) {
+  if (count <= 0 || !pool.length) return [];
+  return pool
+    .map((record, index) => ({ record, rank: hashString(`${seedKey}:${record.date}:${record.hour}:${index}`) }))
+    .sort((a, b) => a.rank - b.rank)
+    .slice(0, count)
+    .map((item) => item.record);
+}
+
+function utcFromLocalSolar(record, longitude) {
+  const local = new Date(`${record.date}T${record.hour}:00:00Z`);
+  const utcMs = local.getTime() - (longitude / 15) * 60 * 60 * 1000;
+  const roundedMs = Math.round(utcMs / (60 * 60 * 1000)) * 60 * 60 * 1000;
+  return new Date(roundedMs);
+}
+
+function formatUtcDate(date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function formatUtcHourKey(date) {
+  return `${date.toISOString().slice(0, 13)}:00`;
+}
+
+function buildEra5Url(site, year) {
+  const params = new URLSearchParams({
+    latitude: site.latitude.toFixed(4),
+    longitude: site.longitude.toFixed(4),
+    start_date: `${year}-01-01`,
+    end_date: `${year}-12-31`,
+    hourly: "temperature_2m",
+    temperature_unit: "celsius",
+    timezone: "UTC",
+    models: "era5_land",
+  });
+  return `${OPEN_METEO_ARCHIVE_ENDPOINT}?${params.toString()}`;
+}
+
+function era5CacheKey(site, year) {
+  return ["era5_land", "temperature_2m", site.site_id, site.latitude.toFixed(4), site.longitude.toFixed(4), year].join("|");
+}
+
+async function fetchEra5Year(db, site, year, refreshCache) {
+  const key = era5CacheKey(site, year);
+  const url = buildEra5Url(site, year);
+  if (!refreshCache) {
+    const cached = await dbGet(db, "era5Responses", key);
+    if (cached?.payload) return { payload: cached.payload, url, cacheHit: true };
+  }
+  const payload = await fetchWithRetry(url, 3);
+  await dbPut(db, "era5Responses", {
+    key,
+    payload,
+    url,
+    saved_at: new Date().toISOString(),
+    site: { site_id: site.site_id, latitude: site.latitude, longitude: site.longitude },
+    year,
+    model: "era5_land",
+    parameter: "temperature_2m",
+  });
+  return { payload, url, cacheHit: false };
+}
+
+function extractEra5Temperature(payload, utcDate) {
+  const hourly = payload?.hourly || {};
+  const times = hourly.time;
+  const values = hourly.temperature_2m;
+  if (!Array.isArray(times) || !Array.isArray(values)) return null;
+  const target = formatUtcHourKey(utcDate);
+  const index = times.indexOf(target);
+  if (index < 0) return null;
+  const value = Number(values[index]);
+  return Number.isFinite(value) ? value : null;
+}
+
+function sampleSiteRows(siteResult) {
+  const rows = siteResult.rows
+    .map((row) => ({
+      date: row.date,
+      hour: row[`hour_${siteResult.timeStandard.toLowerCase()}`],
+      datetime: row[`datetime_${siteResult.timeStandard.toLowerCase()}`],
+      t2m_c: Number(row.t2m_c),
+    }))
+    .filter((row) => row.date && row.hour !== "" && Number.isFinite(row.t2m_c));
+  const values = rows.map((row) => row.t2m_c);
+  const p95 = percentile(values, 95);
+  const p99 = percentile(values, 99);
+  const p95Pool = rows.filter((row) => row.t2m_c >= p95 && row.t2m_c < p99);
+  const tailPool = rows.filter((row) => row.t2m_c >= p99);
+  const p95Count = Math.round(DUAL_SOURCE_SAMPLE_SIZE * 0.2);
+  const tailCount = Math.round(DUAL_SOURCE_SAMPLE_SIZE * 0.2);
+  const randomCount = DUAL_SOURCE_SAMPLE_SIZE - p95Count - tailCount;
+  const selected = [];
+  const used = new Set();
+  const addSample = (stratum, record) => {
+    const key = `${record.date}|${record.hour}`;
+    if (used.has(key)) return;
+    selected.push({ ...record, stratum });
+    used.add(key);
+  };
+  for (const record of stableSample(rows, randomCount, `${DUAL_SOURCE_SEED}:${siteResult.site.site_id}:random`)) addSample("random", record);
+  for (const record of stableSample(p95Pool, p95Count, `${DUAL_SOURCE_SEED}:${siteResult.site.site_id}:p95_p99`)) addSample("p95_p99", record);
+  for (const record of stableSample(tailPool, tailCount, `${DUAL_SOURCE_SEED}:${siteResult.site.site_id}:tail`)) addSample("tail", record);
+  if (selected.length < DUAL_SOURCE_SAMPLE_SIZE) {
+    const remaining = rows.filter((row) => !used.has(`${row.date}|${row.hour}`));
+    for (const record of stableSample(remaining, DUAL_SOURCE_SAMPLE_SIZE - selected.length, `${DUAL_SOURCE_SEED}:${siteResult.site.site_id}:fill`)) {
+      addSample("fill", record);
+    }
+  }
+  return selected.sort((a, b) => `${a.date} ${a.hour}`.localeCompare(`${b.date} ${b.hour}`));
+}
+
+function summarizeDualSourceRows(site, rows, fetchFailures = []) {
+  const compared = rows.filter((row) => Number.isFinite(row.era5_t2m_c));
+  const missingCount = rows.length - compared.length;
+  const reasons = [];
+  const exceeded = [];
+  if (fetchFailures.length) {
+    exceeded.push("ERA5请求失败");
+    reasons.push(`ERA5 请求失败：${fetchFailures.join("；")}`);
+  }
+  if (!compared.length) {
+    return {
+      site_id: site.site_id,
+      name: site.name,
+      country: site.country,
+      sample_count: rows.length,
+      compared_count: 0,
+      missing_count: missingCount,
+      nasa_mean_sample_t2m_c: "",
+      era5_mean_sample_t2m_c: "",
+      mean_bias_era5_minus_nasa_c: "",
+      mean_abs_diff_c: "",
+      p95_abs_point_diff_c: "",
+      max_abs_point_diff_c: "",
+      p95_band_mean_bias_c: "",
+      tail_mean_bias_c: "",
+      exceeded_items: exceeded.length ? exceeded.join(";") : "ERA5缺测",
+      exceeded_detail: reasons.join("；") || "ERA5 抽样点未返回可比较温度",
+      validation_rule: dualSourceRuleText(),
+      status: "需第三/第四源投票",
+      reason: reasons.join("；") || "ERA5 抽样点未返回可比较温度",
+    };
+  }
+  const nasaValues = compared.map((row) => row.nasa_t2m_c);
+  const era5Values = compared.map((row) => row.era5_t2m_c);
+  const absDiffs = compared.map((row) => Math.abs(row.era5_t2m_c - row.nasa_t2m_c));
+  const meanBias = mean(era5Values) - mean(nasaValues);
+  const p95Rows = compared.filter((row) => row.stratum === "p95_p99");
+  const tailRows = compared.filter((row) => row.stratum === "tail");
+  const p95Bias = p95Rows.length ? mean(p95Rows.map((row) => row.era5_t2m_c)) - mean(p95Rows.map((row) => row.nasa_t2m_c)) : NaN;
+  const tailBias = tailRows.length ? mean(tailRows.map((row) => row.era5_t2m_c)) - mean(tailRows.map((row) => row.nasa_t2m_c)) : NaN;
+  const pointP95AbsDiff = percentile(absDiffs, 95);
+  const tailChecks = [p95Bias, tailBias].filter((value) => !Number.isNaN(value)).map((value) => Math.abs(value));
+  const maxTailBiasAbs = tailChecks.length ? Math.max(...tailChecks) : NaN;
+  if (missingCount > 0) {
+    exceeded.push("ERA5缺测");
+    reasons.push(`ERA5 缺测 ${missingCount} 点`);
+  }
+  if (Math.abs(meanBias) > DUAL_SOURCE_MEAN_THRESHOLD_C) {
+    exceeded.push("抽样均值偏差");
+    reasons.push(`抽样均值偏差 ${Math.abs(meanBias).toFixed(2)}°C > ${DUAL_SOURCE_MEAN_THRESHOLD_C.toFixed(2)}°C`);
+  }
+  if (!Number.isNaN(maxTailBiasAbs) && maxTailBiasAbs > DUAL_SOURCE_TAIL_VOTE_THRESHOLD_C) {
+    exceeded.push("高温分层均值偏差");
+    reasons.push(`高温分层均值偏差 ${maxTailBiasAbs.toFixed(2)}°C > ${DUAL_SOURCE_TAIL_VOTE_THRESHOLD_C.toFixed(2)}°C`);
+  }
+  if (pointP95AbsDiff > DUAL_SOURCE_POINT_HARD_THRESHOLD_C) {
+    exceeded.push("单点绝对偏差P95");
+    reasons.push(`单点绝对偏差 P95 ${pointP95AbsDiff.toFixed(2)}°C > ${DUAL_SOURCE_POINT_HARD_THRESHOLD_C.toFixed(2)}°C`);
+  }
+  const tailMark = !Number.isNaN(maxTailBiasAbs) && maxTailBiasAbs > DUAL_SOURCE_TAIL_THRESHOLD_C;
+  let status = "双源一致";
+  let reason = "抽样均值和高温尾部低于工程阈值；单点 P95 未触发硬异常线";
+  if (reasons.length) {
+    status = "需第三/第四源投票";
+    reason = reasons.join("；");
+  } else if (tailMark) {
+    status = "双源基本一致，高温尾部需标注";
+    exceeded.push("高温尾部标注");
+    reason = `抽样均值通过；高温分层均值偏差 ${maxTailBiasAbs.toFixed(2)}°C 位于 ${DUAL_SOURCE_TAIL_THRESHOLD_C.toFixed(2)}-${DUAL_SOURCE_TAIL_VOTE_THRESHOLD_C.toFixed(2)}°C 标注区间`;
+  }
+  return {
+    site_id: site.site_id,
+    name: site.name,
+    country: site.country,
+    sample_count: rows.length,
+    compared_count: compared.length,
+    missing_count: missingCount,
+    nasa_mean_sample_t2m_c: mean(nasaValues).toFixed(3),
+    era5_mean_sample_t2m_c: mean(era5Values).toFixed(3),
+    mean_bias_era5_minus_nasa_c: meanBias.toFixed(3),
+    mean_abs_diff_c: mean(absDiffs).toFixed(3),
+    p95_abs_point_diff_c: pointP95AbsDiff.toFixed(3),
+    max_abs_point_diff_c: Math.max(...absDiffs).toFixed(3),
+    p95_band_mean_bias_c: Number.isNaN(p95Bias) ? "" : p95Bias.toFixed(3),
+    tail_mean_bias_c: Number.isNaN(tailBias) ? "" : tailBias.toFixed(3),
+    exceeded_items: exceeded.join(";"),
+    exceeded_detail: reason,
+    validation_rule: dualSourceRuleText(),
+    status,
+    reason,
+  };
+}
+
+async function runAutomaticDualSourceCheck(db, siteResults, params, progressOffset, progressTotal) {
+  const sampleRows = [];
+  const cityRows = [];
+  let step = 0;
+  for (const siteResult of siteResults) {
+    const site = siteResult.site;
+    const samples = sampleSiteRows(siteResult);
+    const fetchFailures = [];
+    const years = Array.from(new Set(samples.map((sample) => utcFromLocalSolar(sample, site.longitude).getUTCFullYear()))).sort();
+    const payloads = new Map();
+    for (const year of years) {
+      step += 1;
+      setProgress(progressOffset + step - 1, progressTotal, `双源校验 ${site.name} ERA5 ${year}`);
+      try {
+        const { payload, url, cacheHit } = await fetchEra5Year(db, site, year, params.refreshCache);
+        payloads.set(year, { payload, url, cacheHit });
+      } catch (error) {
+        fetchFailures.push(`${year}: ${error.message || error}`);
+      }
+      setProgress(progressOffset + step, progressTotal, `双源校验 ${site.name} ERA5 ${year} 完成`);
+    }
+    let index = 0;
+    for (const sample of samples) {
+      index += 1;
+      const utcDate = utcFromLocalSolar(sample, site.longitude);
+      const year = utcDate.getUTCFullYear();
+      const source = payloads.get(year);
+      const era5 = source ? extractEra5Temperature(source.payload, utcDate) : null;
+      const diff = Number.isFinite(era5) ? era5 - sample.t2m_c : null;
+      sampleRows.push({
+        site_id: site.site_id,
+        name: site.name,
+        country: site.country,
+        latitude: site.latitude.toFixed(4),
+        longitude: site.longitude.toFixed(4),
+        sample_index: index,
+        stratum: sample.stratum,
+        nasa_datetime_local: sample.datetime,
+        nasa_date: sample.date,
+        nasa_hour: sample.hour,
+        era5_datetime_utc: formatUtcHourKey(utcDate).replace("T", " "),
+        nasa_t2m_c: sample.t2m_c,
+        era5_t2m_c: era5 === null ? "" : Number(era5.toFixed(3)),
+        diff_era5_minus_nasa_c: diff === null ? "" : Number(diff.toFixed(3)),
+        abs_diff_c: diff === null ? "" : Number(Math.abs(diff).toFixed(3)),
+        fetch_status: era5 === null ? "missing" : "ok",
+        era5_cache_hit: source ? source.cacheHit : "",
+        era5_url: source ? source.url : "",
+      });
+    }
+    cityRows.push(summarizeDualSourceRows(site, sampleRows.filter((row) => row.site_id === site.site_id).map((row) => ({
+      ...row,
+      nasa_t2m_c: Number(row.nasa_t2m_c),
+      era5_t2m_c: row.era5_t2m_c === "" ? null : Number(row.era5_t2m_c),
+    })), fetchFailures));
+  }
+  const bySiteId = new Map();
+  for (const row of cityRows) bySiteId.set(normalizeSearchText(row.site_id), row);
+  return {
+    status: "自动校验完成",
+    source_file: "",
+    loaded_at: new Date().toISOString(),
+    method: "Browser automatic NASA POWER sample checked against Open-Meteo ERA5-Land temperature_2m",
+    provider: "Open-Meteo Historical Weather API",
+    provider_model: "era5_land",
+    fetch_granularity: "year",
+    sample_size: DUAL_SOURCE_SAMPLE_SIZE,
+    seed: DUAL_SOURCE_SEED,
+    thresholds: {
+      mean_threshold_c: DUAL_SOURCE_MEAN_THRESHOLD_C,
+      tail_threshold_c: DUAL_SOURCE_TAIL_THRESHOLD_C,
+      tail_vote_threshold_c: DUAL_SOURCE_TAIL_VOTE_THRESHOLD_C,
+      point_hard_threshold_c: DUAL_SOURCE_POINT_HARD_THRESHOLD_C,
+    },
+    rows: cityRows,
+    sampleRows,
+    bySiteId,
+  };
 }
 
 async function fetchWithRetry(url, retries = 3) {
@@ -1301,6 +1629,9 @@ function summarizeSite(site, rows, threshold, cacheHits, cacheMisses, failedYear
     exceed_ratio_percent: values.length ? `${((exceedCount / values.length) * 100).toFixed(2)}%` : "",
     dual_source_status: dualSource ? dualSource.status : "未导入",
     dual_source_reason: dualSource ? dualSource.reason : "",
+    dual_source_exceeded_items: dualSource ? dualSource.exceeded_items : "",
+    dual_source_exceeded_detail: dualSource ? dualSource.exceeded_detail : "",
+    dual_source_validation_rule: dualSource ? dualSource.validation_rule : dualSourceRuleText(),
     dual_source_sample_count: dualSource ? dualSource.sample_count : "",
     dual_source_compared_count: dualSource ? dualSource.compared_count : "",
     dual_source_mean_bias_c: dualSource ? dualSource.mean_bias_era5_minus_nasa_c : "",
@@ -1353,6 +1684,7 @@ function setBusy(isBusy) {
   elements.fileInput.disabled = isBusy;
   elements.dualSourceFile.disabled = isBusy;
   elements.clearDualSource.disabled = isBusy;
+  elements.autoDualSource.disabled = isBusy;
   elements.geocodeButton.disabled = isBusy;
   elements.countryCityButton.disabled = isBusy;
 }
@@ -1372,6 +1704,7 @@ function renderSummaryTable(rows) {
       row.exceed_count,
       row.exceed_ratio_percent,
       row.dual_source_status,
+      row.dual_source_exceeded_items,
       row.cache_hits,
       row.cache_misses,
     ];
@@ -1450,9 +1783,10 @@ function summarySheetAoa(result) {
     ["失败请求", manifest.error_count],
     ["双源一致证据", manifest.dual_source?.status || "未导入"],
     ["双源证据文件", manifest.dual_source?.source_file || ""],
+    ["双源校验规则", manifest.dual_source?.validation_rule || dualSourceRuleText()],
     ["工具版本", manifest.tool_version],
     ["生成时间", manifest.generated_at],
-    ["说明", "T2M 为 2 米气温小时平均值，单位摄氏度；宽表按 date + hour 对齐全部点位；双源一致为可选抽样证据层。"],
+    ["说明", "T2M 为 2 米气温小时平均值，单位摄氏度；宽表按 date + hour 对齐全部点位；双源一致为抽样证据层，不是 ERA5 全量复算。"],
     [],
     [
       "site_id",
@@ -1469,7 +1803,10 @@ function summarySheetAoa(result) {
       "超温小时数",
       "超温占比",
       "双源状态",
+      "超限项",
+      "超限说明",
       "双源备注",
+      "双源校验规则",
       "缓存命中",
       "缓存未命中",
       "失败年份",
@@ -1489,7 +1826,10 @@ function summarySheetAoa(result) {
       row.exceed_count,
       row.exceed_ratio_percent,
       row.dual_source_status,
+      row.dual_source_exceeded_items,
+      row.dual_source_exceeded_detail,
       row.dual_source_reason,
+      row.dual_source_validation_rule,
       row.cache_hits,
       row.cache_misses,
       row.failed_years,
@@ -1524,7 +1864,9 @@ function manifestRows(manifest) {
     { key: "dual_source.fetch_granularity", value: manifest.dual_source?.fetch_granularity || "" },
     { key: "dual_source.sample_size", value: manifest.dual_source?.sample_size || "" },
     { key: "dual_source.seed", value: manifest.dual_source?.seed || "" },
-    { key: "sheets", value: "摘要, 宽表_全部点位对齐, 每个点位长表, 双源一致校验(如有), 运行记录, 错误记录(如有)" },
+    { key: "dual_source.validation_rule", value: manifest.dual_source?.validation_rule || dualSourceRuleText() },
+    { key: "dual_source.note", value: "双源一致为抽样证据层，不是 ERA5 全量复算；不通过时优先查看 exceeded_items / exceeded_detail。" },
+    { key: "sheets", value: "摘要, 宽表_全部点位对齐, 每个点位长表, 双源一致校验(如有), 双源抽样明细(如有), 运行记录, 错误记录(如有)" },
   ];
   for (const site of manifest.sites) {
     rows.push({
@@ -1562,10 +1904,10 @@ function appendAoaSheet(workbook, name, aoa, usedNames) {
 
 function dualSourceManifest() {
   if (!dualSourceEvidence) {
-    return { status: "未导入" };
+    return { status: "未导入", validation_rule: dualSourceRuleText() };
   }
   return {
-    status: "已导入",
+    status: dualSourceEvidence.status || "已导入",
     source_file: dualSourceEvidence.source_file,
     loaded_at: dualSourceEvidence.loaded_at,
     method: dualSourceEvidence.method,
@@ -1575,6 +1917,7 @@ function dualSourceManifest() {
     sample_size: dualSourceEvidence.sample_size,
     seed: dualSourceEvidence.seed,
     thresholds: dualSourceEvidence.thresholds,
+    validation_rule: dualSourceRuleText(),
     row_count: dualSourceEvidence.rows.length,
   };
 }
@@ -1592,8 +1935,32 @@ const DUAL_SOURCE_COLUMNS = [
   "p95_abs_point_diff_c",
   "p95_band_mean_bias_c",
   "tail_mean_bias_c",
+  "exceeded_items",
+  "exceeded_detail",
+  "validation_rule",
   "status",
   "reason",
+];
+
+const DUAL_SOURCE_SAMPLE_COLUMNS = [
+  "site_id",
+  "name",
+  "country",
+  "latitude",
+  "longitude",
+  "sample_index",
+  "stratum",
+  "nasa_datetime_local",
+  "nasa_date",
+  "nasa_hour",
+  "era5_datetime_utc",
+  "nasa_t2m_c",
+  "era5_t2m_c",
+  "diff_era5_minus_nasa_c",
+  "abs_diff_c",
+  "fetch_status",
+  "era5_cache_hit",
+  "era5_url",
 ];
 
 function downloadExcelWorkbook() {
@@ -1615,6 +1982,10 @@ function downloadExcelWorkbook() {
 
   if (activeResult.dualSource?.rows?.length) {
     appendJsonSheet(workbook, "双源一致校验", activeResult.dualSource.rows, DUAL_SOURCE_COLUMNS, usedNames);
+  }
+
+  if (activeResult.dualSource?.sampleRows?.length) {
+    appendJsonSheet(workbook, "双源抽样明细", activeResult.dualSource.sampleRows, DUAL_SOURCE_SAMPLE_COLUMNS, usedNames);
   }
 
   appendJsonSheet(workbook, "运行记录", manifestRows(activeResult.manifest), ["key", "value"], usedNames);
@@ -1653,6 +2024,7 @@ function collectParams() {
     threshold,
     timeStandard,
     refreshCache: elements.refreshCache.checked,
+    autoDualSource: elements.autoDualSource.checked,
   };
 }
 
@@ -1674,7 +2046,8 @@ async function runExport() {
 
     const db = await openDatabase();
     const longRows = [];
-    const summaryRows = [];
+    const siteResults = [];
+    let summaryRows = [];
     const errors = [];
     const requests = [];
     const total = sites.length * years.length;
@@ -1752,7 +2125,45 @@ async function runExport() {
           setProgress(done, total, `已完成 ${done}/${total}`);
         }
       }
-      summaryRows.push(summarizeSite(site, siteRows, params.threshold, cacheHits, cacheMisses, failedYears));
+      siteResults.push({
+        site,
+        rows: siteRows,
+        threshold: params.threshold,
+        cacheHits,
+        cacheMisses,
+        failedYears,
+        timeStandard: params.timeStandard,
+      });
+      summaryRows = siteResults.map((item) =>
+        summarizeSite(item.site, item.rows, item.threshold, item.cacheHits, item.cacheMisses, item.failedYears),
+      );
+      renderSummaryTable(summaryRows);
+    }
+
+    let dualProgressTotal = total;
+    if (params.autoDualSource) {
+      dualProgressTotal = total + siteResults.reduce((sum, item) => {
+        const samples = sampleSiteRows(item);
+        const utcYears = new Set(samples.map((sample) => utcFromLocalSolar(sample, item.site.longitude).getUTCFullYear()));
+        return sum + Math.max(utcYears.size, 1);
+      }, 0);
+      setProgress(total, dualProgressTotal || total + 1, "NASA 拉取完成，开始 ERA5-Land 自动双源校验...");
+      dualSourceEvidence = await runAutomaticDualSourceCheck(db, siteResults, params, total, dualProgressTotal || total + 1);
+      const failedDual = dualSourceEvidence.rows.filter((row) => row.status === "需第三/第四源投票");
+      const markedDual = dualSourceEvidence.rows.filter((row) => row.status === "双源基本一致，高温尾部需标注");
+      if (failedDual.length) {
+        const details = failedDual.slice(0, 3).map((row) => `${row.name || row.site_id} ${row.exceeded_detail || row.reason}`).join("；");
+        setWarning(`${failedDual.length} 个点位需第三/第四源投票：${details}`, true);
+      } else if (markedDual.length) {
+        const details = markedDual.slice(0, 3).map((row) => `${row.name || row.site_id} ${row.exceeded_detail || row.reason}`).join("；");
+        setWarning(`${markedDual.length} 个点位双源基本一致但高温尾部需标注：${details}`);
+      } else if (!warnings.length) {
+        setWarning("");
+      }
+      setDualSourceStatus(`自动双源校验完成：${dualSourceEvidence.rows.length} 个点位。${dualSourceRuleText()}`);
+      summaryRows = siteResults.map((item) =>
+        summarizeSite(item.site, item.rows, item.threshold, item.cacheHits, item.cacheMisses, item.failedYears),
+      );
       renderSummaryTable(summaryRows);
     }
 
@@ -1774,7 +2185,10 @@ async function runExport() {
       "exceed_ratio",
       "exceed_ratio_percent",
       "dual_source_status",
+      "dual_source_exceeded_items",
+      "dual_source_exceeded_detail",
       "dual_source_reason",
+      "dual_source_validation_rule",
       "dual_source_sample_count",
       "dual_source_compared_count",
       "dual_source_mean_bias_c",
@@ -1832,14 +2246,14 @@ async function runExport() {
       wideColumns: wide.columns,
       errors,
       errorColumns,
-      dualSource: dualSourceEvidence ? { rows: dualSourceEvidence.rows } : null,
+      dualSource: dualSourceEvidence ? { rows: dualSourceEvidence.rows, sampleRows: dualSourceEvidence.sampleRows || [] } : null,
       manifest,
     };
 
     setDownloadsEnabled(result);
     const completeText = `完成：${sites.length} 个点位，${years.length} 年，${longRows.length.toLocaleString()} 条小时记录，${errors.length} 个失败请求。`;
     elements.runSummary.textContent = completeText;
-    setProgress(total, total, completeText);
+    setProgress(params.autoDualSource ? dualProgressTotal : total, params.autoDualSource ? dualProgressTotal : total, completeText);
     if (errors.length) {
       setWarning(`有 ${errors.length} 个请求失败，下载 Excel 后可在“错误记录”sheet 查看。`, true);
     }
@@ -1912,7 +2326,7 @@ elements.clearCache.addEventListener("click", async () => {
   setBusy(true);
   try {
     const db = await openDatabase();
-    await dbClearStores(db, ["responses", "geocodes", "countryCities"]);
+    await dbClearStores(db, ["responses", "era5Responses", "geocodes", "countryCities"]);
     setWarning("浏览器缓存已清空。");
   } catch (error) {
     setWarning(`清空缓存失败：${error.message || error}`, true);
