@@ -1,0 +1,4 @@
+﻿pair,compared_hours,missing_or_unmatched_hours,mean_bias_c,mean_abs_diff_c,median_bias_c,p95_abs_diff_c,max_abs_diff_c,reference_p95_c,reference_p99_c,p95_p99_mean_bias_c,p99_tail_mean_bias_c,max_fixed_window_mean_bias_abs_c,status,reason
+ERA5-Land - NASA,2520,0,-0.519,1.135,-0.458,3.041,5.495,28.601,32.009,-1.73,-2.53,1.798,一致,总体均值、固定窗口和单点 P95 均未触发阈值
+NOAA station - NASA,2520,0,0.954,1.487,1.03,3.5,6.33,28.601,32.009,0.43,0.635,1.871,一致,总体均值、固定窗口和单点 P95 均未触发阈值
+NOAA station - ERA5-Land,2520,0,1.473,1.667,1.474,3.671,6.012,27.256,29.967,2.134,2.466,2.432,一致,总体均值、固定窗口和单点 P95 均未触发阈值

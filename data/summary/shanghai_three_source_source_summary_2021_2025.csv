@@ -1,0 +1,4 @@
+﻿source,method,valid_hours,missing_hours,min_c,mean_c,max_c,p95_c,p99_c,hours_ge_35c,ratio_ge_35c,hours_ge_40c,ratio_ge_40c
+NASA POWER,NASA POWER Hourly API / T2M / UTC,2520,0,-7.13,16.261,35.97,28.601,32.009,4,0.001587,0,0.0
+ERA5-Land,Copernicus CDS / reanalysis-era5-land / 2m_temperature / UTC,2520,0,-8.292,15.742,32.679,27.256,29.967,0,0.0,0,0.0
+NOAA station,Meteostat bulk mirror / WMO 58367 / temp_source mostly ISD-Lite,2520,0,-7.0,17.215,36.0,29.0,33.0,10,0.003968,0,0.0

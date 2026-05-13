@@ -1,0 +1,46 @@
+﻿pair,window,hours,mean_bias_c,mean_abs_diff_c,p95_abs_diff_c
+ERA5-Land - NASA,2021_jan_week,168,0.152,1.242,2.773
+ERA5-Land - NASA,2021_may_week,168,-0.836,1.153,3.25
+ERA5-Land - NASA,2021_oct_week,168,-0.331,0.859,1.693
+ERA5-Land - NASA,2022_jan_week,168,-0.161,0.876,2.614
+ERA5-Land - NASA,2022_may_week,168,-1.024,1.26,2.938
+ERA5-Land - NASA,2022_oct_week,168,-0.85,1.065,3.524
+ERA5-Land - NASA,2023_jan_week,168,0.209,1.315,3.219
+ERA5-Land - NASA,2023_may_week,168,-0.949,1.252,3.254
+ERA5-Land - NASA,2023_oct_week,168,-0.89,1.161,3.198
+ERA5-Land - NASA,2024_jan_week,168,0.028,1.015,2.318
+ERA5-Land - NASA,2024_may_week,168,-1.016,1.177,2.891
+ERA5-Land - NASA,2024_oct_week,168,-0.03,1.009,2.132
+ERA5-Land - NASA,2025_jan_week,168,0.334,0.953,2.776
+ERA5-Land - NASA,2025_may_week,168,-1.798,1.863,4.135
+ERA5-Land - NASA,2025_oct_week,168,-0.624,0.826,1.976
+NOAA station - NASA,2021_jan_week,168,0.969,1.469,4.183
+NOAA station - NASA,2021_may_week,168,1.174,1.436,3.183
+NOAA station - NASA,2021_oct_week,168,1.473,1.666,2.857
+NOAA station - NASA,2022_jan_week,168,1.145,1.506,3.82
+NOAA station - NASA,2022_may_week,168,1.407,1.554,3.115
+NOAA station - NASA,2022_oct_week,168,-0.114,1.352,2.949
+NOAA station - NASA,2023_jan_week,168,1.848,2.137,4.194
+NOAA station - NASA,2023_may_week,168,0.561,1.51,3.739
+NOAA station - NASA,2023_oct_week,168,0.344,1.192,2.506
+NOAA station - NASA,2024_jan_week,168,1.567,1.683,3.533
+NOAA station - NASA,2024_may_week,168,0.849,1.205,2.929
+NOAA station - NASA,2024_oct_week,168,-0.115,1.124,2.647
+NOAA station - NASA,2025_jan_week,168,1.871,2.014,4.003
+NOAA station - NASA,2025_may_week,168,0.594,1.295,3.506
+NOAA station - NASA,2025_oct_week,168,0.736,1.158,2.25
+NOAA station - ERA5-Land,2021_jan_week,168,0.817,1.037,2.528
+NOAA station - ERA5-Land,2021_may_week,168,2.01,2.061,3.486
+NOAA station - ERA5-Land,2021_oct_week,168,1.804,1.834,3.327
+NOAA station - ERA5-Land,2022_jan_week,168,1.307,1.407,3.496
+NOAA station - ERA5-Land,2022_may_week,168,2.432,2.435,4.488
+NOAA station - ERA5-Land,2022_oct_week,168,0.736,1.463,4.101
+NOAA station - ERA5-Land,2023_jan_week,168,1.639,1.699,3.277
+NOAA station - ERA5-Land,2023_may_week,168,1.51,1.75,3.555
+NOAA station - ERA5-Land,2023_oct_week,168,1.233,1.368,2.646
+NOAA station - ERA5-Land,2024_jan_week,168,1.539,1.59,3.429
+NOAA station - ERA5-Land,2024_may_week,168,1.865,1.907,3.64
+NOAA station - ERA5-Land,2024_oct_week,168,-0.086,0.881,2.017
+NOAA station - ERA5-Land,2025_jan_week,168,1.536,1.567,3.183
+NOAA station - ERA5-Land,2025_may_week,168,2.391,2.469,5.328
+NOAA station - ERA5-Land,2025_oct_week,168,1.36,1.535,3.206

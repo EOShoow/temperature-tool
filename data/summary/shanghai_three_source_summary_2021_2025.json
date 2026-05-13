@@ -1,0 +1,492 @@
+{
+  "city_id": "shanghai",
+  "city_zh": "上海",
+  "latitude": 31.2304,
+  "longitude": 121.4737,
+  "start_year": 2021,
+  "end_year": 2025,
+  "time_standard": "UTC",
+  "comparison_mode": "fixed-windows",
+  "window_time_basis": "UTC",
+  "noaa_station": "58367",
+  "noaa_station_name": "Shanghai Hongqiao",
+  "nasa_endpoint": "https://power.larc.nasa.gov/api/temporal/hourly/point",
+  "era5_endpoint": "https://archive-api.open-meteo.com/v1/archive",
+  "era5_provider_requested": "cds",
+  "era5_provider_used": "Copernicus CDS",
+  "era5_fallback_reason": "",
+  "meteostat_hourly_bulk_template": "https://data.meteostat.net/hourly/{year}/{station}.csv.gz",
+  "noaa_temp_source_counts": {
+    "isd_lite": 2320,
+    "metar": 199,
+    "dwd_mosmix": 1
+  },
+  "source_summary": [
+    {
+      "source": "NASA POWER",
+      "method": "NASA POWER Hourly API / T2M / UTC",
+      "valid_hours": 2520,
+      "missing_hours": 0,
+      "min_c": -7.13,
+      "mean_c": 16.261,
+      "max_c": 35.97,
+      "p95_c": 28.601,
+      "p99_c": 32.009,
+      "hours_ge_35c": 4,
+      "ratio_ge_35c": 0.001587,
+      "hours_ge_40c": 0,
+      "ratio_ge_40c": 0.0
+    },
+    {
+      "source": "ERA5-Land",
+      "method": "Copernicus CDS / reanalysis-era5-land / 2m_temperature / UTC",
+      "valid_hours": 2520,
+      "missing_hours": 0,
+      "min_c": -8.292,
+      "mean_c": 15.742,
+      "max_c": 32.679,
+      "p95_c": 27.256,
+      "p99_c": 29.967,
+      "hours_ge_35c": 0,
+      "ratio_ge_35c": 0.0,
+      "hours_ge_40c": 0,
+      "ratio_ge_40c": 0.0
+    },
+    {
+      "source": "NOAA station",
+      "method": "Meteostat bulk mirror / WMO 58367 / temp_source mostly ISD-Lite",
+      "valid_hours": 2520,
+      "missing_hours": 0,
+      "min_c": -7.0,
+      "mean_c": 17.215,
+      "max_c": 36.0,
+      "p95_c": 29.0,
+      "p99_c": 33.0,
+      "hours_ge_35c": 10,
+      "ratio_ge_35c": 0.003968,
+      "hours_ge_40c": 0,
+      "ratio_ge_40c": 0.0
+    }
+  ],
+  "pair_summary": [
+    {
+      "pair": "ERA5-Land - NASA",
+      "compared_hours": 2520,
+      "missing_or_unmatched_hours": 0,
+      "mean_bias_c": -0.519,
+      "mean_abs_diff_c": 1.135,
+      "median_bias_c": -0.458,
+      "p95_abs_diff_c": 3.041,
+      "max_abs_diff_c": 5.495,
+      "reference_p95_c": 28.601,
+      "reference_p99_c": 32.009,
+      "p95_p99_mean_bias_c": -1.73,
+      "p99_tail_mean_bias_c": -2.53,
+      "max_fixed_window_mean_bias_abs_c": 1.798,
+      "status": "一致",
+      "reason": "总体均值、固定窗口和单点 P95 均未触发阈值"
+    },
+    {
+      "pair": "NOAA station - NASA",
+      "compared_hours": 2520,
+      "missing_or_unmatched_hours": 0,
+      "mean_bias_c": 0.954,
+      "mean_abs_diff_c": 1.487,
+      "median_bias_c": 1.03,
+      "p95_abs_diff_c": 3.5,
+      "max_abs_diff_c": 6.33,
+      "reference_p95_c": 28.601,
+      "reference_p99_c": 32.009,
+      "p95_p99_mean_bias_c": 0.43,
+      "p99_tail_mean_bias_c": 0.635,
+      "max_fixed_window_mean_bias_abs_c": 1.871,
+      "status": "一致",
+      "reason": "总体均值、固定窗口和单点 P95 均未触发阈值"
+    },
+    {
+      "pair": "NOAA station - ERA5-Land",
+      "compared_hours": 2520,
+      "missing_or_unmatched_hours": 0,
+      "mean_bias_c": 1.473,
+      "mean_abs_diff_c": 1.667,
+      "median_bias_c": 1.474,
+      "p95_abs_diff_c": 3.671,
+      "max_abs_diff_c": 6.012,
+      "reference_p95_c": 27.256,
+      "reference_p99_c": 29.967,
+      "p95_p99_mean_bias_c": 2.134,
+      "p99_tail_mean_bias_c": 2.466,
+      "max_fixed_window_mean_bias_abs_c": 2.432,
+      "status": "一致",
+      "reason": "总体均值、固定窗口和单点 P95 均未触发阈值"
+    }
+  ],
+  "window_summary": [
+    {
+      "pair": "ERA5-Land - NASA",
+      "window": "2021_jan_week",
+      "hours": 168,
+      "mean_bias_c": 0.152,
+      "mean_abs_diff_c": 1.242,
+      "p95_abs_diff_c": 2.773
+    },
+    {
+      "pair": "ERA5-Land - NASA",
+      "window": "2021_may_week",
+      "hours": 168,
+      "mean_bias_c": -0.836,
+      "mean_abs_diff_c": 1.153,
+      "p95_abs_diff_c": 3.25
+    },
+    {
+      "pair": "ERA5-Land - NASA",
+      "window": "2021_oct_week",
+      "hours": 168,
+      "mean_bias_c": -0.331,
+      "mean_abs_diff_c": 0.859,
+      "p95_abs_diff_c": 1.693
+    },
+    {
+      "pair": "ERA5-Land - NASA",
+      "window": "2022_jan_week",
+      "hours": 168,
+      "mean_bias_c": -0.161,
+      "mean_abs_diff_c": 0.876,
+      "p95_abs_diff_c": 2.614
+    },
+    {
+      "pair": "ERA5-Land - NASA",
+      "window": "2022_may_week",
+      "hours": 168,
+      "mean_bias_c": -1.024,
+      "mean_abs_diff_c": 1.26,
+      "p95_abs_diff_c": 2.938
+    },
+    {
+      "pair": "ERA5-Land - NASA",
+      "window": "2022_oct_week",
+      "hours": 168,
+      "mean_bias_c": -0.85,
+      "mean_abs_diff_c": 1.065,
+      "p95_abs_diff_c": 3.524
+    },
+    {
+      "pair": "ERA5-Land - NASA",
+      "window": "2023_jan_week",
+      "hours": 168,
+      "mean_bias_c": 0.209,
+      "mean_abs_diff_c": 1.315,
+      "p95_abs_diff_c": 3.219
+    },
+    {
+      "pair": "ERA5-Land - NASA",
+      "window": "2023_may_week",
+      "hours": 168,
+      "mean_bias_c": -0.949,
+      "mean_abs_diff_c": 1.252,
+      "p95_abs_diff_c": 3.254
+    },
+    {
+      "pair": "ERA5-Land - NASA",
+      "window": "2023_oct_week",
+      "hours": 168,
+      "mean_bias_c": -0.89,
+      "mean_abs_diff_c": 1.161,
+      "p95_abs_diff_c": 3.198
+    },
+    {
+      "pair": "ERA5-Land - NASA",
+      "window": "2024_jan_week",
+      "hours": 168,
+      "mean_bias_c": 0.028,
+      "mean_abs_diff_c": 1.015,
+      "p95_abs_diff_c": 2.318
+    },
+    {
+      "pair": "ERA5-Land - NASA",
+      "window": "2024_may_week",
+      "hours": 168,
+      "mean_bias_c": -1.016,
+      "mean_abs_diff_c": 1.177,
+      "p95_abs_diff_c": 2.891
+    },
+    {
+      "pair": "ERA5-Land - NASA",
+      "window": "2024_oct_week",
+      "hours": 168,
+      "mean_bias_c": -0.03,
+      "mean_abs_diff_c": 1.009,
+      "p95_abs_diff_c": 2.132
+    },
+    {
+      "pair": "ERA5-Land - NASA",
+      "window": "2025_jan_week",
+      "hours": 168,
+      "mean_bias_c": 0.334,
+      "mean_abs_diff_c": 0.953,
+      "p95_abs_diff_c": 2.776
+    },
+    {
+      "pair": "ERA5-Land - NASA",
+      "window": "2025_may_week",
+      "hours": 168,
+      "mean_bias_c": -1.798,
+      "mean_abs_diff_c": 1.863,
+      "p95_abs_diff_c": 4.135
+    },
+    {
+      "pair": "ERA5-Land - NASA",
+      "window": "2025_oct_week",
+      "hours": 168,
+      "mean_bias_c": -0.624,
+      "mean_abs_diff_c": 0.826,
+      "p95_abs_diff_c": 1.976
+    },
+    {
+      "pair": "NOAA station - NASA",
+      "window": "2021_jan_week",
+      "hours": 168,
+      "mean_bias_c": 0.969,
+      "mean_abs_diff_c": 1.469,
+      "p95_abs_diff_c": 4.183
+    },
+    {
+      "pair": "NOAA station - NASA",
+      "window": "2021_may_week",
+      "hours": 168,
+      "mean_bias_c": 1.174,
+      "mean_abs_diff_c": 1.436,
+      "p95_abs_diff_c": 3.183
+    },
+    {
+      "pair": "NOAA station - NASA",
+      "window": "2021_oct_week",
+      "hours": 168,
+      "mean_bias_c": 1.473,
+      "mean_abs_diff_c": 1.666,
+      "p95_abs_diff_c": 2.857
+    },
+    {
+      "pair": "NOAA station - NASA",
+      "window": "2022_jan_week",
+      "hours": 168,
+      "mean_bias_c": 1.145,
+      "mean_abs_diff_c": 1.506,
+      "p95_abs_diff_c": 3.82
+    },
+    {
+      "pair": "NOAA station - NASA",
+      "window": "2022_may_week",
+      "hours": 168,
+      "mean_bias_c": 1.407,
+      "mean_abs_diff_c": 1.554,
+      "p95_abs_diff_c": 3.115
+    },
+    {
+      "pair": "NOAA station - NASA",
+      "window": "2022_oct_week",
+      "hours": 168,
+      "mean_bias_c": -0.114,
+      "mean_abs_diff_c": 1.352,
+      "p95_abs_diff_c": 2.949
+    },
+    {
+      "pair": "NOAA station - NASA",
+      "window": "2023_jan_week",
+      "hours": 168,
+      "mean_bias_c": 1.848,
+      "mean_abs_diff_c": 2.137,
+      "p95_abs_diff_c": 4.194
+    },
+    {
+      "pair": "NOAA station - NASA",
+      "window": "2023_may_week",
+      "hours": 168,
+      "mean_bias_c": 0.561,
+      "mean_abs_diff_c": 1.51,
+      "p95_abs_diff_c": 3.739
+    },
+    {
+      "pair": "NOAA station - NASA",
+      "window": "2023_oct_week",
+      "hours": 168,
+      "mean_bias_c": 0.344,
+      "mean_abs_diff_c": 1.192,
+      "p95_abs_diff_c": 2.506
+    },
+    {
+      "pair": "NOAA station - NASA",
+      "window": "2024_jan_week",
+      "hours": 168,
+      "mean_bias_c": 1.567,
+      "mean_abs_diff_c": 1.683,
+      "p95_abs_diff_c": 3.533
+    },
+    {
+      "pair": "NOAA station - NASA",
+      "window": "2024_may_week",
+      "hours": 168,
+      "mean_bias_c": 0.849,
+      "mean_abs_diff_c": 1.205,
+      "p95_abs_diff_c": 2.929
+    },
+    {
+      "pair": "NOAA station - NASA",
+      "window": "2024_oct_week",
+      "hours": 168,
+      "mean_bias_c": -0.115,
+      "mean_abs_diff_c": 1.124,
+      "p95_abs_diff_c": 2.647
+    },
+    {
+      "pair": "NOAA station - NASA",
+      "window": "2025_jan_week",
+      "hours": 168,
+      "mean_bias_c": 1.871,
+      "mean_abs_diff_c": 2.014,
+      "p95_abs_diff_c": 4.003
+    },
+    {
+      "pair": "NOAA station - NASA",
+      "window": "2025_may_week",
+      "hours": 168,
+      "mean_bias_c": 0.594,
+      "mean_abs_diff_c": 1.295,
+      "p95_abs_diff_c": 3.506
+    },
+    {
+      "pair": "NOAA station - NASA",
+      "window": "2025_oct_week",
+      "hours": 168,
+      "mean_bias_c": 0.736,
+      "mean_abs_diff_c": 1.158,
+      "p95_abs_diff_c": 2.25
+    },
+    {
+      "pair": "NOAA station - ERA5-Land",
+      "window": "2021_jan_week",
+      "hours": 168,
+      "mean_bias_c": 0.817,
+      "mean_abs_diff_c": 1.037,
+      "p95_abs_diff_c": 2.528
+    },
+    {
+      "pair": "NOAA station - ERA5-Land",
+      "window": "2021_may_week",
+      "hours": 168,
+      "mean_bias_c": 2.01,
+      "mean_abs_diff_c": 2.061,
+      "p95_abs_diff_c": 3.486
+    },
+    {
+      "pair": "NOAA station - ERA5-Land",
+      "window": "2021_oct_week",
+      "hours": 168,
+      "mean_bias_c": 1.804,
+      "mean_abs_diff_c": 1.834,
+      "p95_abs_diff_c": 3.327
+    },
+    {
+      "pair": "NOAA station - ERA5-Land",
+      "window": "2022_jan_week",
+      "hours": 168,
+      "mean_bias_c": 1.307,
+      "mean_abs_diff_c": 1.407,
+      "p95_abs_diff_c": 3.496
+    },
+    {
+      "pair": "NOAA station - ERA5-Land",
+      "window": "2022_may_week",
+      "hours": 168,
+      "mean_bias_c": 2.432,
+      "mean_abs_diff_c": 2.435,
+      "p95_abs_diff_c": 4.488
+    },
+    {
+      "pair": "NOAA station - ERA5-Land",
+      "window": "2022_oct_week",
+      "hours": 168,
+      "mean_bias_c": 0.736,
+      "mean_abs_diff_c": 1.463,
+      "p95_abs_diff_c": 4.101
+    },
+    {
+      "pair": "NOAA station - ERA5-Land",
+      "window": "2023_jan_week",
+      "hours": 168,
+      "mean_bias_c": 1.639,
+      "mean_abs_diff_c": 1.699,
+      "p95_abs_diff_c": 3.277
+    },
+    {
+      "pair": "NOAA station - ERA5-Land",
+      "window": "2023_may_week",
+      "hours": 168,
+      "mean_bias_c": 1.51,
+      "mean_abs_diff_c": 1.75,
+      "p95_abs_diff_c": 3.555
+    },
+    {
+      "pair": "NOAA station - ERA5-Land",
+      "window": "2023_oct_week",
+      "hours": 168,
+      "mean_bias_c": 1.233,
+      "mean_abs_diff_c": 1.368,
+      "p95_abs_diff_c": 2.646
+    },
+    {
+      "pair": "NOAA station - ERA5-Land",
+      "window": "2024_jan_week",
+      "hours": 168,
+      "mean_bias_c": 1.539,
+      "mean_abs_diff_c": 1.59,
+      "p95_abs_diff_c": 3.429
+    },
+    {
+      "pair": "NOAA station - ERA5-Land",
+      "window": "2024_may_week",
+      "hours": 168,
+      "mean_bias_c": 1.865,
+      "mean_abs_diff_c": 1.907,
+      "p95_abs_diff_c": 3.64
+    },
+    {
+      "pair": "NOAA station - ERA5-Land",
+      "window": "2024_oct_week",
+      "hours": 168,
+      "mean_bias_c": -0.086,
+      "mean_abs_diff_c": 0.881,
+      "p95_abs_diff_c": 2.017
+    },
+    {
+      "pair": "NOAA station - ERA5-Land",
+      "window": "2025_jan_week",
+      "hours": 168,
+      "mean_bias_c": 1.536,
+      "mean_abs_diff_c": 1.567,
+      "p95_abs_diff_c": 3.183
+    },
+    {
+      "pair": "NOAA station - ERA5-Land",
+      "window": "2025_may_week",
+      "hours": 168,
+      "mean_bias_c": 2.391,
+      "mean_abs_diff_c": 2.469,
+      "p95_abs_diff_c": 5.328
+    },
+    {
+      "pair": "NOAA station - ERA5-Land",
+      "window": "2025_oct_week",
+      "hours": 168,
+      "mean_bias_c": 1.36,
+      "mean_abs_diff_c": 1.535,
+      "p95_abs_diff_c": 3.206
+    }
+  ],
+  "aligned_csv": "data/processed/shanghai_three_source_hourly_2021_2025_utc.csv",
+  "source_summary_csv": "data/summary/shanghai_three_source_source_summary_2021_2025.csv",
+  "pair_summary_csv": "data/summary/shanghai_three_source_pair_summary_2021_2025.csv",
+  "window_summary_csv": "data/summary/shanghai_three_source_fixed_window_summary_2021_2025.csv",
+  "json_summary": "data/summary/shanghai_three_source_summary_2021_2025.json",
+  "report_path": "docs/shanghai_three_source_temperature_bias_2021_2025.md"
+}
