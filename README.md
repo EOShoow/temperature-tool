@@ -6,6 +6,8 @@
 
 第一版可迁移工具位于 `web/`，无需 Docker、无需后端。Windows 启动器不要求安装 Python；Mac 启动器会使用系统可用的 Python 3 或 Ruby。推荐用双击启动器打开本地静态服务，浏览器缓存和联网请求行为比直接双击 HTML 更稳定。
 
+在线试用：https://EOShoow.github.io/temperature-tool/
+
 使用方式：
 
 1. Windows 双击 `启动温度工具-Windows.bat`；Mac 双击 `启动温度工具-Mac.command`。
