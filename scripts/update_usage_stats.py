@@ -23,18 +23,17 @@ STAT_PATHS = {
 }
 
 
-def fetch_total(path: str, end_at: str) -> int:
+def fetch_hit_counts(end_at: str) -> dict[str, int]:
     query = urllib.parse.urlencode(
         {
             "start": START_AT,
             "end": end_at,
-            "path_by_name": "true",
-            "include_paths": [path],
+            "limit": 100,
         },
         doseq=True,
     )
     request = urllib.request.Request(
-        f"{API_BASE.rstrip('/')}/stats/total?{query}",
+        f"{API_BASE.rstrip('/')}/stats/hits?{query}",
         headers={
             "Authorization": f"Bearer {API_TOKEN}",
             "Accept": "application/json",
@@ -44,7 +43,10 @@ def fetch_total(path: str, end_at: str) -> int:
     )
     with urllib.request.urlopen(request, timeout=30) as response:
         payload = json.load(response)
-    return int(payload.get("total", 0))
+    return {
+        str(row.get("name", "")): int(row.get("count", 0))
+        for row in payload.get("stats", [])
+    }
 
 
 def main() -> int:
@@ -53,7 +55,8 @@ def main() -> int:
         return 0
 
     end_at = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0).isoformat().replace("+00:00", "Z")
-    stats = {key: fetch_total(path, end_at) for key, path in STAT_PATHS.items()}
+    hit_counts = fetch_hit_counts(end_at)
+    stats = {key: hit_counts.get(path, 0) for key, path in STAT_PATHS.items()}
     payload = {
         "ready": True,
         "completed_exports": stats["completed_exports"],
