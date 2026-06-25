@@ -5,11 +5,12 @@
   let fallbackMode = false;
   let fallbackPageviewSent = false;
 
-  function sendPixel(endpoint, path, title) {
+  function sendPixel(endpoint, path, title, isEvent = false) {
     if (!endpoint || !path) return;
     const params = new URLSearchParams();
     params.set("p", path);
     if (title) params.set("t", title);
+    if (isEvent) params.set("e", "1");
     if (document.referrer) params.set("r", document.referrer);
     const image = new Image(1, 1);
     image.src = `${endpoint}?${params.toString()}`;
@@ -23,7 +24,7 @@
     trackEvent(path, title) {
       if (!this.enabled || !path) return;
       if (fallbackMode) {
-        sendPixel(this.endpoint, path, title || path);
+        sendPixel(this.endpoint, path, title || path, true);
         return;
       }
       const event = { path, title: title || path, event: true };
@@ -68,7 +69,7 @@
     }
     while (analytics.queue.length) {
       const event = analytics.queue.shift();
-      sendPixel(endpoint, event.path, event.title);
+      sendPixel(endpoint, event.path, event.title, true);
     }
   });
   document.head.appendChild(script);
