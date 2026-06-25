@@ -23,17 +23,10 @@ STAT_PATHS = {
 }
 
 
-def fetch_hit_counts(end_at: str) -> dict[str, int]:
-    query = urllib.parse.urlencode(
-        {
-            "start": START_AT,
-            "end": end_at,
-            "limit": 100,
-        },
-        doseq=True,
-    )
+def request_json(path: str, query_params: dict[str, object]) -> dict:
+    query = urllib.parse.urlencode(query_params, doseq=True)
     request = urllib.request.Request(
-        f"{API_BASE.rstrip('/')}/stats/hits?{query}",
+        f"{API_BASE.rstrip('/')}{path}?{query}",
         headers={
             "Authorization": f"Bearer {API_TOKEN}",
             "Accept": "application/json",
@@ -42,11 +35,37 @@ def fetch_hit_counts(end_at: str) -> dict[str, int]:
         },
     )
     with urllib.request.urlopen(request, timeout=30) as response:
-        payload = json.load(response)
-    return {
-        str(row.get("name", "")): int(row.get("count", 0))
-        for row in payload.get("stats", [])
-    }
+        return json.load(response)
+
+
+def fetch_path_ids() -> dict[str, int]:
+    path_ids: dict[str, int] = {}
+    after = 0
+    while True:
+        params = {"Limit": 200}
+        if after:
+            params["After"] = after
+        payload = request_json("/paths", params)
+        paths = payload.get("paths", [])
+        for row in paths:
+            path = str(row.get("path", ""))
+            if path in STAT_PATHS.values():
+                path_ids[path] = int(row["id"])
+            after = max(after, int(row.get("id", after)))
+        if not payload.get("more"):
+            return path_ids
+
+
+def fetch_total(path_id: int, end_at: str) -> int:
+    payload = request_json(
+        "/stats/total",
+        {
+            "start": START_AT,
+            "end": end_at,
+            "include_paths": [str(path_id)],
+        },
+    )
+    return int(payload.get("total", 0))
 
 
 def main() -> int:
@@ -55,8 +74,11 @@ def main() -> int:
         return 0
 
     end_at = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0).isoformat().replace("+00:00", "Z")
-    hit_counts = fetch_hit_counts(end_at)
-    stats = {key: hit_counts.get(path, 0) for key, path in STAT_PATHS.items()}
+    path_ids = fetch_path_ids()
+    stats = {
+        key: fetch_total(path_ids[path], end_at) if path in path_ids else 0
+        for key, path in STAT_PATHS.items()
+    }
     payload = {
         "ready": True,
         "completed_exports": stats["completed_exports"],
