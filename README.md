@@ -25,6 +25,8 @@
 3. 修改 `web/analytics-config.js`，把 `goatcounterCode` 从空字符串改成该 `code`。
 4. 提交并推送到 `main`，GitHub Pages 会随工作流更新。
 
+页面顶部会读取 `web/usage-stats.json` 展示一行公益使用计数。该 JSON 由 `.github/workflows/update-usage-stats.yml` 定时刷新；需要在 GitHub Actions secrets 中配置 `GOATCOUNTER_API_TOKEN`，token 只用于 Actions 调用 GoatCounter 聚合统计 API，不会写入网页。
+
 如果只知道城市名，可以先在“搜城市（联网）”里查询。工具会先查内置城市表；未命中时调用 OpenStreetMap Nominatim 展示候选，经用户确认后追加到 CSV。该功能只在点击查询时访问公共地理编码服务，不做自动联想或批量地名解析。
 
 如果只知道国家名称，可以用“搜国家（代表城市）”。工具会返回已维护国家的内置 Top 经济城市候选，候选仍需手动确认后加入 CSV。这些列表是便于气温拉取的实用候选，不是官方 GDP 精确排名证据；如需严谨 GDP 排名，应外部核验后手工输入坐标。未内置国家请用“搜城市（联网）”逐个查询，或直接手工输入经纬度。

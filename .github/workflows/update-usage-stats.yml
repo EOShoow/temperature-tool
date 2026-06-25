@@ -1,0 +1,57 @@
+name: Update public usage stats
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 * * * *"
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  update:
+    environment:
+      name: github-pages
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Update stats JSON
+        env:
+          GOATCOUNTER_API_TOKEN: ${{ secrets.GOATCOUNTER_API_TOKEN }}
+        run: python3 scripts/update_usage_stats.py
+
+      - name: Check stats changes
+        id: stats
+        run: |
+          if git diff --quiet -- web/usage-stats.json; then
+            echo "No usage stats changes."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit updated stats
+        if: steps.stats.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add web/usage-stats.json
+          git commit -m "更新网页公益使用计数"
+          git push
+
+      - name: Upload web artifact
+        if: steps.stats.outputs.changed == 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+
+      - name: Deploy to GitHub Pages
+        if: steps.stats.outputs.changed == 'true'
+        uses: actions/deploy-pages@v4

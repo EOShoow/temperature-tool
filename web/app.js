@@ -496,6 +496,7 @@ const elements = {
   summaryTableBody: document.querySelector("#summaryTable tbody"),
   downloadButtons: document.getElementById("downloadButtons"),
   cacheStatus: document.getElementById("cacheStatus"),
+  usageStats: document.getElementById("usageStats"),
 };
 
 let activeResult = null;
@@ -505,6 +506,30 @@ let dualSourceEvidence = null;
 
 function trackUsageEvent(path, title) {
   window.temperatureToolAnalytics?.trackEvent(path, title);
+}
+
+function formatCount(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0) return "0";
+  return Math.floor(number).toLocaleString("zh-CN");
+}
+
+async function updateUsageStats() {
+  if (!elements.usageStats) return;
+  try {
+    const response = await fetch(`./usage-stats.json?v=${Date.now()}`, { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const stats = await response.json();
+    if (!stats.ready) {
+      elements.usageStats.textContent = "公益使用计数正在更新。";
+      return;
+    }
+    const completed = formatCount(stats.completed_exports);
+    const downloads = formatCount(stats.excel_downloads);
+    elements.usageStats.textContent = `已帮助完成 ${completed} 次气温数据导出，下载 ${downloads} 份 Excel。数据来自匿名统计，每日更新。`;
+  } catch (error) {
+    elements.usageStats.hidden = true;
+  }
 }
 
 function csvEscape(value) {
@@ -2421,3 +2446,4 @@ elements.downloadButtons.addEventListener("click", (event) => {
 });
 
 updateCacheStatus();
+updateUsageStats();

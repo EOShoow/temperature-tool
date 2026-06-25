@@ -99,6 +99,7 @@ h3 {
 }
 
 .topbar p,
+.usage-stats,
 .panel-head p,
 .readme-panel p,
 .note,
@@ -117,6 +118,11 @@ h3 {
   background: #ffffff;
   padding: 7px 12px;
   color: var(--muted);
+}
+
+.usage-stats {
+  margin-top: 8px;
+  font-size: 14px;
 }
 
 .grid {
