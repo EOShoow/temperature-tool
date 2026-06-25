@@ -164,7 +164,7 @@
           </div>
           <div>
             <h3>隐私边界</h3>
-            <p>坐标、缓存和导出结果都在浏览器本地处理。本工具没有自有服务器；NASA POWER 和自动双源校验使用的 Open-Meteo 会收到经纬度请求，城市联网查询会把地名发给 OpenStreetMap Nominatim。</p>
+            <p>坐标、缓存和导出结果都在浏览器本地处理。本工具没有自有服务器；NASA POWER 和自动双源校验使用的 Open-Meteo 会收到经纬度请求，城市联网查询会把地名发给 OpenStreetMap Nominatim。在线版本仅记录匿名聚合访问和使用事件。</p>
           </div>
           <div>
             <h3>缓存说明</h3>
@@ -183,6 +183,8 @@
     </main>
 
     <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+    <script src="./analytics-config.js"></script>
+    <script src="./analytics.js"></script>
     <script src="./app.js"></script>
   </body>
 </html>

@@ -503,6 +503,10 @@ let lastGeocodeRequestAt = 0;
 let lastEra5RequestAt = 0;
 let dualSourceEvidence = null;
 
+function trackUsageEvent(path, title) {
+  window.temperatureToolAnalytics?.trackEvent(path, title);
+}
+
 function csvEscape(value) {
   if (value === null || value === undefined) return "";
   const text = String(value);
@@ -2056,6 +2060,7 @@ const DUAL_SOURCE_SAMPLE_COLUMNS = [
 
 function downloadExcelWorkbook() {
   if (!activeResult) return;
+  trackUsageEvent("temperature-tool-download-excel", "Download Excel workbook");
   if (!window.XLSX) {
     setWarning("Excel 导出组件未加载。请确认网络可访问 cdn.sheetjs.com，或改用本地静态服务后刷新页面。", true);
     return;
@@ -2130,6 +2135,7 @@ async function runExport() {
     const sites = parseSites(elements.csvInput.value);
     const years = [];
     for (let year = params.startYear; year <= params.endYear; year += 1) years.push(year);
+    trackUsageEvent("temperature-tool-run-start", "Start temperature export");
     const warnings = [];
     if (sites.length > 20) warnings.push(`本次包含 ${sites.length} 个点位，超过建议的 20 个点位。`);
     if (years.length > 10) warnings.push(`本次包含 ${years.length} 个自然年，超过建议的 10 年。`);
@@ -2338,12 +2344,14 @@ async function runExport() {
 
     setDownloadsEnabled(result);
     const completeText = `完成：${sites.length} 个点位，${years.length} 年，${longRows.length.toLocaleString()} 条小时记录，${errors.length} 个失败请求。`;
+    trackUsageEvent("temperature-tool-run-complete", "Complete temperature export");
     elements.runSummary.textContent = completeText;
     setProgress(params.autoDualSource ? dualProgressTotal : total, params.autoDualSource ? dualProgressTotal : total, completeText);
     if (errors.length) {
       setWarning(`有 ${errors.length} 个请求失败，下载 Excel 后可在“错误记录”sheet 查看。`, true);
     }
   } catch (error) {
+    trackUsageEvent("temperature-tool-run-error", "Temperature export error");
     setWarning(error.message || String(error), true);
     elements.runSummary.textContent = "运行失败。";
     setProgress(0, 1, "运行失败，请检查输入。");
