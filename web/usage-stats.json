@@ -1,7 +1,7 @@
 {
   "ready": true,
-  "completed_exports": 0,
-  "excel_downloads": 0,
+  "completed_exports": 1,
+  "excel_downloads": 1,
   "updated_at": "2026-06-25T08:00:00Z",
   "source": "GoatCounter anonymous aggregate stats",
   "window": {
