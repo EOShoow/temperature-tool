@@ -1,11 +1,11 @@
 {
   "ready": true,
-  "completed_exports": 6,
+  "completed_exports": 7,
   "excel_downloads": 5,
-  "updated_at": "2026-11-24T15:00:00Z",
+  "updated_at": "2026-11-25T09:00:00Z",
   "source": "GoatCounter anonymous aggregate stats",
   "window": {
     "start": "2026-06-01T00:00:00Z",
-    "end": "2026-11-24T15:00:00Z"
+    "end": "2026-11-25T09:00:00Z"
   }
 }
